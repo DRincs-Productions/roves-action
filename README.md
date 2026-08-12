@@ -124,17 +124,19 @@ jobs:
         run: gh release upload "${{ github.ref_name }}" "${{ steps.roves.outputs.archive-path }}"
 ```
 
-**Linux `.deb` package instead of the default self-contained binary**, plus a custom icon and
-content packing tuned for a save-data folder that shouldn't be compressed:
+**An installable package instead of the default portable binary** — `deb`/`msi`/`dmg` are
+each specific to their own OS (see "Portable vs. installable packages" below), so a
+multi-platform matrix picks the right one per `os`, plus a custom icon and content packing
+tuned for a save-data folder that shouldn't be compressed:
 
 ```yml
 - uses: DRincs-Productions/roves-action@v1
   with:
     content-dir: dist
     artifact-name: my-game_linux-deb
-    deb: 'true'
-    deb-package-name: my-game
-    deb-version: ${{ github.ref_name }}
+    deb: 'true' # msi: 'true' on windows-latest, dmg: 'true' on macos-latest
+    package-name: my-game
+    package-version: ${{ github.ref_name }}
     icon-png: assets/icon.png
     content-exclude: |
       saves/**
@@ -362,20 +364,36 @@ content packing tuned for a save-data folder that shouldn't be compressed:
     content-boot-include: ''
 
     # Build an installable .deb instead of the default self-contained binary ([roves]
-    # `--deb`). Linux only.
+    # `--deb`). Linux only — see "Portable vs. installable packages" below.
     #
     # default: false
     deb: false
 
-    # Debian package name ([roves] `--deb-package-name`). Only used with deb=true.
+    # Build an installable .msi instead of the default self-contained play.exe bundle
+    # ([roves] `--msi`). Windows only. Requires WiX's candle/light on PATH — see "Portable
+    # vs. installable packages" below.
+    #
+    # default: false
+    msi: false
+
+    # Wrap the default Roves.app bundle in an installable .dmg disk image ([roves] `--dmg`).
+    # macOS only.
+    #
+    # default: false
+    dmg: false
+
+    # Package name to use with deb/msi/dmg ([roves] `--package-name`). Ignored unless one of
+    # those is true.
     #
     # default: roves
-    deb-package-name: ''
+    package-name: ''
 
-    # Debian package version ([roves] `--deb-version`). Only used with deb=true.
+    # Package version to use with deb/msi/dmg ([roves] `--package-version`). Ignored unless
+    # one of those is true. For msi specifically, must be 1-4 dot-separated integers
+    # (0-65535 each, e.g. "1.2.3") — mach bundle errors clearly otherwise.
     #
     # default: 0.0.0
-    deb-version: ''
+    package-version: ''
 
     # Explicit path to the servoshell binary to bundle, bypassing auto-resolution from the
     # build-profile flags above ([servo] `--bin`).
@@ -424,6 +442,24 @@ Roves' own default branding instead.
 
 [CUSTOMIZATIONS.md]: https://github.com/DRincs-Productions/roves/blob/main/CUSTOMIZATIONS.md
 
+## Portable vs. installable packages
+
+By default, on every platform, this action produces a **portable** bundle — no install step.
+Each platform also has one installable alternative, each gated to its own OS the same way
+`deb` already was:
+
+| Platform (`runner.os`) | Portable (default) | Installable input |
+| --- | --- | --- |
+| `Linux` | `play` + `.so` deps, flat | `deb: 'true'` → a real `.deb` |
+| `Windows` | `play.exe` + DLLs, flat | `msi: 'true'` → a real `.msi` (needs WiX's `candle`/`light` on `PATH` — see the `msi` input's own note and the "Add WiX Toolset to PATH" step this action runs for you when `msi: 'true'` on `windows-latest`) |
+| `macOS` | `Roves.app` | `dmg: 'true'` → that same `.app`, wrapped in a `.dmg` |
+
+`deb`/`msi`/`dmg` are each silently ignored on the OSes they don't apply to (see "Tips and
+Caveats" below), so a single input set — including turning more than one on at once — can
+stay the same across a matrix; only the one matching the current runner actually does
+anything. `package-name`/`package-version` name and version whichever installable format
+you asked for; they're ignored entirely when none of `deb`/`msi`/`dmg` are set.
+
 ## Tips and Caveats
 
 - Every input is tagged `[servo]` (plain upstream Servo — `mach build`, or `mach bundle`'s
@@ -440,8 +476,10 @@ Roves' own default branding instead.
 - If you set both `release` and `dev` (or any other mutually-exclusive pair mach itself
   rejects), that's forwarded to mach as-is and mach's own argument parser is what errors —
   this action does no validation of its own on top of mach's.
-- `deb: 'true'` is only honored on Linux; the input is silently ignored on macOS/Windows
-  runners rather than erroring, so a single input set can stay the same across a matrix.
+- `deb`/`msi`/`dmg` are each only honored on their own OS; setting any of them on the wrong
+  runner is silently ignored rather than erroring, so a single input set (even with more
+  than one turned on) can stay the same across a matrix — see "Portable vs. installable
+  packages" above.
 - Roves doesn't publish prebuilt binaries (yet) — `mach build` really does compile the engine
   from source on every call to this action, which is slow (Rust, and a large dependency
   graph). If your CI runs this often, cache Cargo's registry/target directories yourself

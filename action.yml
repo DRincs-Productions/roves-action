@@ -196,12 +196,32 @@ inputs:
     description: '[roves] `--deb`: build an installable .deb instead of the default self-contained binary. Linux only.'
     required: false
     default: 'false'
-  deb-package-name:
-    description: '[roves] `--deb-package-name <NAME>`: Debian package name. Only used with deb=true.'
+  msi:
+    description: >-
+      [roves] `--msi`: build an installable .msi instead of the default self-contained
+      play.exe bundle. Windows only. Requires the WiX Toolset's `candle`/`light` on PATH —
+      the windows-latest GitHub-hosted runner ships these pre-installed but not on PATH by
+      default (add `%WIX%\bin` yourself, e.g. via a `pwsh` step, before this action).
+    required: false
+    default: 'false'
+  dmg:
+    description: >-
+      [roves] `--dmg`: wrap the default Roves.app bundle in an installable .dmg disk image
+      instead of shipping the .app on its own. macOS only.
+    required: false
+    default: 'false'
+  package-name:
+    description: >-
+      [roves] `--package-name <NAME>`: package name to use with deb/msi/dmg. Ignored unless
+      one of those is true.
     required: false
     default: 'roves'
-  deb-version:
-    description: '[roves] `--deb-version <VERSION>`: Debian package version. Only used with deb=true.'
+  package-version:
+    description: >-
+      [roves] `--package-version <VERSION>`: package version to use with deb/msi/dmg.
+      Ignored unless one of those is true. For msi specifically, must be 1-4 dot-separated
+      integers (0-65535 each, e.g. "1.2.3") — an MSI file-format constraint; `mach bundle`
+      raises a clear error otherwise.
     required: false
     default: '0.0.0'
   bin:
@@ -311,6 +331,16 @@ runs:
           sudo apt-get update && sudo apt-get install -y --no-install-recommends dpkg-dev
         fi
 
+    # `mach bundle --msi` shells out to WiX's candle/light (see the engine's own
+    # post_build_commands.py `_wrap_windows_msi`). The windows-latest GitHub-hosted runner
+    # ships the WiX Toolset pre-installed, with $WIX pointing at its install root, but its
+    # bin/ isn't on PATH by default — a self-hosted/other Windows runner would need WiX
+    # installed some other way before this action, since mach bootstrap doesn't provide it.
+    - name: Add WiX Toolset to PATH (Windows, msi=true only)
+      if: runner.os == 'Windows' && inputs.msi == 'true'
+      shell: pwsh
+      run: echo "$env:WIX\bin" >> $env:GITHUB_PATH
+
     - name: mach build
       shell: bash
       working-directory: ${{ inputs.roves-src-path }}
@@ -376,8 +406,17 @@ runs:
           [ -n "$glob" ] && args+=(--content-boot-include "$glob")
         done <<< "${{ inputs.content-boot-include }}"
 
+        if [ "${{ inputs.deb }}" = "true" ] || [ "${{ inputs.msi }}" = "true" ] || [ "${{ inputs.dmg }}" = "true" ]; then
+          args+=(--package-name "${{ inputs.package-name }}" --package-version "${{ inputs.package-version }}")
+        fi
         if [ "${{ runner.os }}" = "Linux" ] && [ "${{ inputs.deb }}" = "true" ]; then
-          args+=(--deb --deb-package-name "${{ inputs.deb-package-name }}" --deb-version "${{ inputs.deb-version }}")
+          args+=(--deb)
+        fi
+        if [ "${{ runner.os }}" = "Windows" ] && [ "${{ inputs.msi }}" = "true" ]; then
+          args+=(--msi)
+        fi
+        if [ "${{ runner.os }}" = "macOS" ] && [ "${{ inputs.dmg }}" = "true" ]; then
+          args+=(--dmg)
         fi
 
         echo "./mach bundle ${args[*]} ${{ inputs.bundle-params }}"

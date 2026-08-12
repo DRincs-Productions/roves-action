@@ -1,0 +1,65 @@
+name: Release
+
+# Publishes a new version of *this action* (not a Roves game — see the main README for that).
+# Pushing a `vX.Y.Z` tag creates a GitHub Release for it and moves the major-version tag (`vX`)
+# to point at it, so consumers can pin `uses: DRincs-Productions/roves-action@v1` and
+# automatically get every v1.x.y update without editing their own workflow. This is the same
+# convention actions/checkout, actions/setup-node, etc. all follow — see "Releasing" in this
+# repo's README for the full walkthrough, including the one manual step (Marketplace listing)
+# this workflow deliberately does not attempt.
+#
+# workflow_dispatch lets you re-run this against an already-pushed tag (e.g. to move `v1` back
+# after a bad release) without needing to re-push/re-tag anything.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing vX.Y.Z tag to (re)publish and (re)point the major-version tag at'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+
+      - name: Resolve tag + major version
+        id: version
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag || github.ref_name }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$TAG' is not a vX.Y.Z tag"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "major=${TAG%%.*}" >> "$GITHUB_OUTPUT"
+
+      # Lightweight tag (no annotation/message needed) pointing at the same commit as the real
+      # release tag — exactly how actions/checkout's own `v4` tag works. `-f` lets this move an
+      # already-existing major tag forward on every new release in that line.
+      - name: Move major-version tag
+        run: |
+          git tag -f "${{ steps.version.outputs.major }}" "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.major }}" --force
+
+      # Idempotent: re-running this workflow (e.g. via workflow_dispatch, to fix a botched
+      # major-tag move) against a tag that already has a release just skips creating another
+      # one — same "check, then create" idiom as DRincs-Productions/roves's own test.yml.
+      - name: Create GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "${{ steps.version.outputs.tag }}" >/dev/null 2>&1 || \
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --title "${{ steps.version.outputs.tag }}" \
+            --generate-notes

@@ -1,0 +1,411 @@
+name: 'Build & bundle a Roves game'
+description: >-
+  Builds the Roves engine (a customized Servo fork, github.com/DRincs-Productions/roves) from
+  source and packages your already-built web content into a double-click-ready native bundle
+  (play.exe / Roves.app / play, or a .deb) via `mach build` + `mach bundle` — mirroring
+  DRincs-Productions/roves's own .github/workflows/test.yml, generalized for any game's CI.
+author: 'DRincs Productions'
+branding:
+  icon: 'package'
+  color: 'purple'
+
+inputs:
+  # ── Roves engine checkout ──────────────────────────────────────────────────────
+  roves-repo:
+    description: 'The Roves engine repo to check out and build. Override only for a fork.'
+    required: false
+    default: 'DRincs-Productions/roves'
+  roves-ref:
+    description: >-
+      Git ref (branch/tag/sha) of roves-repo to build against. Pin this to a specific tag once
+      Roves starts cutting versioned releases — defaulting to a branch means this action's
+      behavior can change under you between runs.
+    required: false
+    default: 'main'
+  roves-src-path:
+    description: 'Where to check out roves-repo, relative to your own repo root.'
+    required: false
+    default: 'roves-src'
+  bootstrap:
+    description: >-
+      Run `mach bootstrap` (installs the native build dependencies mach build/bundle need).
+      Set to 'false' only if you already provisioned them yourself in an earlier step (e.g. to
+      share a cache across multiple calls to this action).
+    required: false
+    default: 'true'
+
+  # ── Your game's content ────────────────────────────────────────────────────────
+  content-dir:
+    description: >-
+      Path (relative to your repo root) to your already-built web content, e.g. a Vite/webpack
+      dist/ folder. Building that content is your own job, before this action — Roves doesn't
+      know or care what bundler/framework produced it. Required.
+    required: true
+  icon-png:
+    description: >-
+      Path (relative to your repo root) to a window/taskbar icon (PNG). KNOWN LIMITATION:
+      Roves' game-icon fallback (ports/servoshell/build.rs) is currently hardcoded to look for
+      `test-page/public/icon.png` inside the engine checkout, not a generic path — this input
+      works around that by copying your file there before `mach build`. Omit to keep Roves'
+      own default branding.
+    required: false
+    default: ''
+  icon-ico:
+    description: >-
+      Path (relative to your repo root) to a Windows .exe icon (multi-size .ico). Same
+      hardcoded-path workaround as icon-png, for `test-page/public/icon.ico`. Windows-only;
+      ignored on other platforms.
+    required: false
+    default: ''
+
+  # ── `mach build` (stock Servo flags — none of these are Roves-specific) ───────
+  release:
+    description: '[servo] `--release`: optimized build.'
+    required: false
+    default: 'false'
+  dev:
+    description: '[servo] `--dev`: debug build (the default if release/production/profile are all unset).'
+    required: false
+    default: 'false'
+  production:
+    description: '[servo] `--prod`: release build without debug assertions.'
+    required: false
+    default: 'false'
+  profile:
+    description: '[servo] `--profile <NAME>`: build with a custom Cargo profile instead of dev/release/prod.'
+    required: false
+    default: ''
+  target:
+    description: '[servo] `--target <TRIPLE>`: cross-compile target triple. Native desktop builds should leave this empty.'
+    required: false
+    default: ''
+  features:
+    description: '[servo] `--features <LIST>`: extra Cargo features, space-separated (e.g. "steam").'
+    required: false
+    default: ''
+  media-stack:
+    description: '[servo] `--media-stack <gstreamer|dummy>`: media backend. `dummy` avoids needing GStreamer installed at all (no audio/video playback).'
+    required: false
+    default: ''
+  jobs:
+    description: '[servo] `--jobs <N>`: parallel build job count, forwarded to Cargo.'
+    required: false
+    default: ''
+  with-asan:
+    description: '[servo] `--with-asan`: build with AddressSanitizer.'
+    required: false
+    default: 'false'
+  with-tsan:
+    description: '[servo] `--with-tsan`: build with ThreadSanitizer.'
+    required: false
+    default: 'false'
+  with-debug-assertions:
+    description: '[servo] `--with-debug-assertions`: keep debug assertions in an otherwise-release build.'
+    required: false
+    default: 'false'
+  debug-mozjs:
+    description: '[servo] `--debug-mozjs`: build mozjs with debug assertions.'
+    required: false
+    default: 'false'
+  with-frame-pointer:
+    description: '[servo] `--with-frame-pointer`: enable frame pointers (background hang monitor).'
+    required: false
+    default: 'false'
+  use-crown:
+    description: "[servo] `--use-crown`: enable Servo's `crown` JS-GC lint tool."
+    required: false
+    default: 'false'
+  coverage:
+    description: '[servo] `--coverage`: build with code-coverage instrumentation (also affects which binary `mach bundle` looks for).'
+    required: false
+    default: 'false'
+  android:
+    description: '[servo] `--android`: build for the default Android target. Not currently a supported Roves platform — see the engine README.'
+    required: false
+    default: 'false'
+  ohos:
+    description: '[servo] `--ohos`: build for the default OpenHarmony target. Not currently a supported Roves platform — see the engine README.'
+    required: false
+    default: 'false'
+  win-arm64:
+    description: '[servo] `--win-arm64`: use the arm64 Windows target instead of x64.'
+    required: false
+    default: 'false'
+  flavor:
+    description: '[servo] `--flavor <NAME>`: Gradle/Hvigor product flavor, Android/OpenHarmony packaging only.'
+    required: false
+    default: ''
+  verbose:
+    description: '[servo] `--verbose`: verbose build output.'
+    required: false
+    default: 'false'
+  very-verbose:
+    description: '[servo] `--very-verbose`: very verbose build output (also dumps build env vars).'
+    required: false
+    default: 'false'
+  no-package:
+    description: '[servo] `--no-package`: Android only — skip packaging into a .apk after building.'
+    required: false
+    default: 'false'
+  build-params:
+    description: '[servo] Extra passthrough arguments appended verbatim to `mach build`, space-separated.'
+    required: false
+    default: ''
+
+  # ── `mach bundle` (Roves-added command — no upstream Servo equivalent) ────────
+  html-file:
+    description: '[roves] `--html-file <PATH>`: entry html file, relative to --content-dir.'
+    required: false
+    default: 'index.html'
+  window-size:
+    description: '[roves] `--window-size <WxH>`: initial window size.'
+    required: false
+    default: '1280x720'
+  output:
+    description: >-
+      [roves] `--output <DIR>`: where mach bundle writes the packaged game, relative to your
+      repo root. Defaults to a path this action controls (and exposes via the `bundle-dir`
+      output) so it can reliably find and zip it afterward.
+    required: false
+    default: ''
+  content-compress:
+    description: '[roves] `--content-compress <auto|none>`: pack content into tar+zstd archives (auto, the default) or copy it in as loose files (none).'
+    required: false
+    default: 'auto'
+  content-compression-level:
+    description: '[roves] `--content-compression-level <N>`: zstd level used by content-compress=auto.'
+    required: false
+    default: '1'
+  content-max-pack-size:
+    description: '[roves] `--content-max-pack-size <SIZE>`: max size per content archive before splitting (e.g. 500M, 1G).'
+    required: false
+    default: '500M'
+  content-exclude:
+    description: >-
+      [roves] `--content-exclude <GLOB>`: globs (relative to --content-dir) of files to leave
+      loose/uncompressed instead of packing, one per line for more than one.
+    required: false
+    default: ''
+  content-boot-include:
+    description: >-
+      [roves] `--content-boot-include <GLOB>`: globs (relative to --content-dir), one per line
+      for more than one, of extra files to force into the eager boot set.
+    required: false
+    default: ''
+  deb:
+    description: '[roves] `--deb`: build an installable .deb instead of the default self-contained binary. Linux only.'
+    required: false
+    default: 'false'
+  deb-package-name:
+    description: '[roves] `--deb-package-name <NAME>`: Debian package name. Only used with deb=true.'
+    required: false
+    default: 'roves'
+  deb-version:
+    description: '[roves] `--deb-version <VERSION>`: Debian package version. Only used with deb=true.'
+    required: false
+    default: '0.0.0'
+  bin:
+    description: '[servo] `--bin <PATH>`: explicit path to the servoshell binary to bundle, bypassing auto-resolution from the build-profile flags above.'
+    required: false
+    default: ''
+  nightly:
+    description: '[servo] `--nightly <YYYY-MM-DD>`: bundle a dated nightly build instead of a just-built binary.'
+    required: false
+    default: ''
+  bundle-params:
+    description: '[roves] Extra launch arguments baked into the bundle (passed to servoshell every time the shipped game starts), space-separated.'
+    required: false
+    default: ''
+
+  # ── Packaging (this action's own convention, not a mach flag) ─────────────────
+  artifact-name:
+    description: >-
+      Base name for the zipped archive and the folder inside it (e.g. "my-game" produces
+      my-game.zip containing a my-game/ folder) — see DRincs-Productions/roves's
+      CUSTOMIZATIONS.md on why the bundle is always named-folder-then-zipped, never zipped at
+      the archive root.
+    required: false
+    default: 'roves-game'
+
+outputs:
+  bundle-dir:
+    description: 'Absolute path to the unzipped bundle output directory.'
+    value: ${{ steps.package.outputs.bundle-dir }}
+  archive-path:
+    description: 'Absolute path to the zipped archive (<artifact-name>.zip).'
+    value: ${{ steps.package.outputs.archive-path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Resolve paths (content-dir/icons are relative to your repo, not the engine checkout)
+      id: paths
+      shell: bash
+      run: |
+        set -euo pipefail
+        content_dir_abs="$(cd "${{ inputs.content-dir }}" && pwd)"
+        echo "content-dir-abs=$content_dir_abs" >> "$GITHUB_OUTPUT"
+
+        if [ -n "${{ inputs.output }}" ]; then
+          mkdir -p "${{ inputs.output }}"
+          output_abs="$(cd "${{ inputs.output }}" && pwd)"
+        else
+          output_abs="${{ github.workspace }}/roves-bundle-output"
+          mkdir -p "$output_abs"
+        fi
+        echo "output-abs=$output_abs" >> "$GITHUB_OUTPUT"
+
+        roves_src_abs="${{ github.workspace }}/${{ inputs.roves-src-path }}"
+        echo "roves-src-abs=$roves_src_abs" >> "$GITHUB_OUTPUT"
+
+    - name: Checkout Roves engine source
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.roves-repo }}
+        ref: ${{ inputs.roves-ref }}
+        path: ${{ inputs.roves-src-path }}
+
+    - name: Copy game icon into the engine checkout
+      if: inputs.icon-png != '' || inputs.icon-ico != ''
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p "${{ steps.paths.outputs.roves-src-abs }}/test-page/public"
+        if [ -n "${{ inputs.icon-png }}" ]; then
+          cp "${{ inputs.icon-png }}" "${{ steps.paths.outputs.roves-src-abs }}/test-page/public/icon.png"
+        fi
+        if [ -n "${{ inputs.icon-ico }}" ]; then
+          cp "${{ inputs.icon-ico }}" "${{ steps.paths.outputs.roves-src-abs }}/test-page/public/icon.ico"
+        fi
+
+    - name: Setup python (mach needs a consistent python3 across all 3 OSes)
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: Setup uv (needed by ./mach — see the engine's own README)
+      uses: astral-sh/setup-uv@v5
+
+    - name: Prefetch pinned rust toolchain
+      shell: bash
+      working-directory: ${{ inputs.roves-src-path }}
+      run: rustup show
+
+    # Windows: mach's own bootstrap shells out to the GStreamer MSI installer via a UAC
+    # elevation prompt, which just hangs forever with no interactive session — skip it with
+    # --skip-platform, safe as long as media-stack=gstreamer isn't actually needed (dummy, the
+    # media-stack default here, needs no native media libraries at all). dpkg-dev is required
+    # for `mach bundle --deb` but isn't installed by mach bootstrap itself.
+    - name: mach bootstrap
+      if: inputs.bootstrap == 'true'
+      shell: bash
+      working-directory: ${{ inputs.roves-src-path }}
+      run: |
+        set -euo pipefail
+        if [ "${{ runner.os }}" = "Windows" ]; then
+          ./mach bootstrap --force --yes --skip-lints --skip-nextest --skip-platform
+        else
+          ./mach bootstrap --force --yes --skip-lints --skip-nextest
+        fi
+        if [ "${{ runner.os }}" = "Linux" ] && [ "${{ inputs.deb }}" = "true" ]; then
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends dpkg-dev
+        fi
+
+    - name: mach build
+      shell: bash
+      working-directory: ${{ inputs.roves-src-path }}
+      run: |
+        set -euo pipefail
+        args=()
+        [ "${{ inputs.release }}" = "true" ] && args+=(--release)
+        [ "${{ inputs.dev }}" = "true" ] && args+=(--dev)
+        [ "${{ inputs.production }}" = "true" ] && args+=(--prod)
+        [ -n "${{ inputs.profile }}" ] && args+=(--profile "${{ inputs.profile }}")
+        [ -n "${{ inputs.target }}" ] && args+=(--target "${{ inputs.target }}")
+        [ -n "${{ inputs.features }}" ] && args+=(--features ${{ inputs.features }})
+        [ -n "${{ inputs.media-stack }}" ] && args+=(--media-stack "${{ inputs.media-stack }}")
+        [ -n "${{ inputs.jobs }}" ] && args+=(--jobs "${{ inputs.jobs }}")
+        [ "${{ inputs.with-asan }}" = "true" ] && args+=(--with-asan)
+        [ "${{ inputs.with-tsan }}" = "true" ] && args+=(--with-tsan)
+        [ "${{ inputs.with-debug-assertions }}" = "true" ] && args+=(--with-debug-assertions)
+        [ "${{ inputs.debug-mozjs }}" = "true" ] && args+=(--debug-mozjs)
+        [ "${{ inputs.with-frame-pointer }}" = "true" ] && args+=(--with-frame-pointer)
+        [ "${{ inputs.use-crown }}" = "true" ] && args+=(--use-crown)
+        [ "${{ inputs.coverage }}" = "true" ] && args+=(--coverage)
+        [ "${{ inputs.android }}" = "true" ] && args+=(--android)
+        [ "${{ inputs.ohos }}" = "true" ] && args+=(--ohos)
+        [ "${{ inputs.win-arm64 }}" = "true" ] && args+=(--win-arm64)
+        [ -n "${{ inputs.flavor }}" ] && args+=(--flavor "${{ inputs.flavor }}")
+        [ "${{ inputs.verbose }}" = "true" ] && args+=(--verbose)
+        [ "${{ inputs.very-verbose }}" = "true" ] && args+=(--very-verbose)
+        [ "${{ inputs.no-package }}" = "true" ] && args+=(--no-package)
+
+        echo "./mach build ${args[*]} ${{ inputs.build-params }}"
+        ./mach build "${args[@]}" ${{ inputs.build-params }}
+
+    - name: mach bundle
+      shell: bash
+      working-directory: ${{ inputs.roves-src-path }}
+      run: |
+        set -euo pipefail
+        args=(
+          --content-dir "${{ steps.paths.outputs.content-dir-abs }}"
+          --output "${{ steps.paths.outputs.output-abs }}"
+          --html-file "${{ inputs.html-file }}"
+          --window-size "${{ inputs.window-size }}"
+          --content-compress "${{ inputs.content-compress }}"
+          --content-compression-level "${{ inputs.content-compression-level }}"
+          --content-max-pack-size "${{ inputs.content-max-pack-size }}"
+        )
+        # Same build-profile-selection flags as `mach build` above — bundle doesn't rebuild
+        # anything, it just needs these to locate the binary that step already produced.
+        [ "${{ inputs.release }}" = "true" ] && args+=(--release)
+        [ "${{ inputs.dev }}" = "true" ] && args+=(--dev)
+        [ "${{ inputs.production }}" = "true" ] && args+=(--prod)
+        [ -n "${{ inputs.profile }}" ] && args+=(--profile "${{ inputs.profile }}")
+        [ "${{ inputs.with-asan }}" = "true" ] && args+=(--with-asan)
+        [ "${{ inputs.with-tsan }}" = "true" ] && args+=(--with-tsan)
+        [ "${{ inputs.coverage }}" = "true" ] && args+=(--coverage)
+        [ -n "${{ inputs.bin }}" ] && args+=(--bin "${{ inputs.bin }}")
+        [ -n "${{ inputs.nightly }}" ] && args+=(--nightly "${{ inputs.nightly }}")
+
+        while IFS= read -r glob; do
+          [ -n "$glob" ] && args+=(--content-exclude "$glob")
+        done <<< "${{ inputs.content-exclude }}"
+        while IFS= read -r glob; do
+          [ -n "$glob" ] && args+=(--content-boot-include "$glob")
+        done <<< "${{ inputs.content-boot-include }}"
+
+        if [ "${{ runner.os }}" = "Linux" ] && [ "${{ inputs.deb }}" = "true" ]; then
+          args+=(--deb --deb-package-name "${{ inputs.deb-package-name }}" --deb-version "${{ inputs.deb-version }}")
+        fi
+
+        echo "./mach bundle ${args[*]} ${{ inputs.bundle-params }}"
+        ./mach bundle "${args[@]}" ${{ inputs.bundle-params }}
+
+    # Renamed to a named subfolder before zipping, rather than zipping the output directory's
+    # contents directly at the archive root — otherwise extracting dumps play.exe/play plus a
+    # pile of loose DLLs/support files straight into whatever folder you extract into instead
+    # of one folder of their own. See DRincs-Productions/roves's CUSTOMIZATIONS.md.
+    - name: Package bundle (zip)
+      id: package
+      shell: bash
+      run: |
+        set -euo pipefail
+        parent="$(dirname "${{ steps.paths.outputs.output-abs }}")"
+        named="$parent/${{ inputs.artifact-name }}"
+        rm -rf "$named"
+        mv "${{ steps.paths.outputs.output-abs }}" "$named"
+
+        zip_path="$parent/${{ inputs.artifact-name }}.zip"
+        (
+          cd "$parent"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            pwsh -NoProfile -Command "Compress-Archive -Path '${{ inputs.artifact-name }}' -DestinationPath '${{ inputs.artifact-name }}.zip' -Force"
+          else
+            zip -r "${{ inputs.artifact-name }}.zip" "${{ inputs.artifact-name }}"
+          fi
+        )
+
+        echo "bundle-dir=$named" >> "$GITHUB_OUTPUT"
+        echo "archive-path=$zip_path" >> "$GITHUB_OUTPUT"

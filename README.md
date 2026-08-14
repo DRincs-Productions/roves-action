@@ -3,7 +3,7 @@
 This GitHub Action builds [Roves](https://github.com/DRincs-Productions/roves) — a customized
 Servo fork used as a runtime for shipping web-based games as real native apps instead of as a
 browser tab — from source, and packages your already-built web content into a double-click-
-ready native bundle for macOS, Linux, and Windows: `Roves.app` / `play` / `play.exe`, or a
+ready native bundle for macOS, Linux, and Windows: `play.app` / `play` / `play.exe`, or a
 `.deb` on Linux.
 
 It runs `mach build` + `mach bundle` (see
@@ -376,7 +376,7 @@ tuned for a save-data folder that shouldn't be compressed:
     # default: false
     msi: false
 
-    # Wrap the default Roves.app bundle in an installable .dmg disk image ([roves] `--dmg`).
+    # Wrap the default play.app bundle in an installable .dmg disk image ([roves] `--dmg`).
     # macOS only.
     #
     # default: false
@@ -461,7 +461,7 @@ Each platform also has one installable alternative, each gated to its own OS the
 | --- | --- | --- |
 | `Linux` | `play` + `.so` deps, flat | `deb: 'true'` → a real `.deb` |
 | `Windows` | `play.exe` + DLLs, flat | `msi: 'true'` → a real `.msi` (needs WiX's `candle`/`light` on `PATH` — see the `msi` input's own note and the "Add WiX Toolset to PATH" step this action runs for you when `msi: 'true'` on `windows-latest`) |
-| `macOS` | `Roves.app` | `dmg: 'true'` → that same `.app`, wrapped in a `.dmg` |
+| `macOS` | `play.app` | `dmg: 'true'` → that same `.app`, wrapped in a `.dmg` |
 
 `deb`/`msi`/`dmg` are each silently ignored on the OSes they don't apply to (see "Tips and
 Caveats" below), so a single input set — including turning more than one on at once — can

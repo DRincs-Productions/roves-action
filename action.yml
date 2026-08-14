@@ -2,7 +2,7 @@ name: 'Build & bundle a Roves game'
 description: >-
   Builds the Roves engine (a customized Servo fork, github.com/DRincs-Productions/roves) from
   source and packages your already-built web content into a double-click-ready native bundle
-  (play.exe / Roves.app / play, or a .deb) via `mach build` + `mach bundle` — mirroring
+  (play.exe / play.app / play, or a .deb) via `mach build` + `mach bundle` — mirroring
   DRincs-Productions/roves's own .github/workflows/test.yml, generalized for any game's CI.
 author: 'DRincs Productions'
 branding:
@@ -206,7 +206,7 @@ inputs:
     default: 'false'
   dmg:
     description: >-
-      [roves] `--dmg`: wrap the default Roves.app bundle in an installable .dmg disk image
+      [roves] `--dmg`: wrap the default play.app bundle in an installable .dmg disk image
       instead of shipping the .app on its own. macOS only.
     required: false
     default: 'false'

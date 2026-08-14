@@ -395,6 +395,15 @@ tuned for a save-data folder that shouldn't be compressed:
     # default: 0.0.0
     package-version: ''
 
+    # Ship a diagnose.bat/diagnose.sh alongside the bundle ([roves] `--diagnostic-script`,
+    # portable/msi/dmg only, not deb) that launches the game from a console and prints its
+    # exit code plus roves.log inline — for testers to run when a build appears to do
+    # nothing. Off by default: a real release has no reason to carry this debug tooling
+    # unasked.
+    #
+    # default: false
+    diagnostic-script: false
+
     # Explicit path to the servoshell binary to bundle, bypassing auto-resolution from the
     # build-profile flags above ([servo] `--bin`).
     #

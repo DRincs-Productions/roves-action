@@ -224,6 +224,15 @@ inputs:
       raises a clear error otherwise.
     required: false
     default: '0.0.0'
+  diagnostic-script:
+    description: >-
+      [roves] `--diagnostic-script`: ship a diagnose.bat/diagnose.sh alongside the bundle
+      (portable/msi/dmg only, not deb) that launches the game from a console and prints its
+      exit code plus roves.log inline — for testers to run when a build appears to do
+      nothing. Off by default: a real release has no reason to carry this debug tooling
+      unasked.
+    required: false
+    default: 'false'
   bin:
     description: '[servo] `--bin <PATH>`: explicit path to the servoshell binary to bundle, bypassing auto-resolution from the build-profile flags above.'
     required: false
@@ -418,6 +427,7 @@ runs:
         if [ "${{ runner.os }}" = "macOS" ] && [ "${{ inputs.dmg }}" = "true" ]; then
           args+=(--dmg)
         fi
+        [ "${{ inputs.diagnostic-script }}" = "true" ] && args+=(--diagnostic-script)
 
         echo "./mach bundle ${args[*]} ${{ inputs.bundle-params }}"
         ./mach bundle "${args[@]}" ${{ inputs.bundle-params }}

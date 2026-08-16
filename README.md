@@ -63,7 +63,7 @@ jobs:
         id: roves
         uses: DRincs-Productions/roves-action@v1
         with:
-          roves-ref: v0.4.0 # pin once Roves has real tags — see that input's own note below
+          roves-ref: v0.1.0 # defaults to the latest release tag anyway — see that input's own note below
           content-dir: dist
           artifact-name: ${{ matrix.name }}
           release: 'true'
@@ -154,11 +154,12 @@ tuned for a save-data folder that shouldn't be compressed:
     # default: DRincs-Productions/roves
     roves-repo: ''
 
-    # Git ref (branch/tag/sha) of roves-repo to build against. Pin this to a specific tag
-    # once Roves starts cutting versioned releases — the default is a branch, which means
-    # this action's behavior can change under you between runs without a version bump here.
+    # Git ref (branch/tag/sha) of roves-repo to build against. Defaults to the latest
+    # versioned Roves release tag — override to pin to a different tag/branch/sha (e.g.
+    # 'main' to track the latest unreleased commit instead, at the cost of this action's
+    # behavior possibly changing under you between runs).
     #
-    # default: main
+    # default: v0.1.0
     roves-ref: ''
 
     # Where to check out roves-repo, relative to your own repo root.

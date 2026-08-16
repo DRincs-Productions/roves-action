@@ -17,11 +17,12 @@ inputs:
     default: 'DRincs-Productions/roves'
   roves-ref:
     description: >-
-      Git ref (branch/tag/sha) of roves-repo to build against. Pin this to a specific tag once
-      Roves starts cutting versioned releases — defaulting to a branch means this action's
-      behavior can change under you between runs.
+      Git ref (branch/tag/sha) of roves-repo to build against. Defaults to the latest
+      versioned Roves release tag — override to pin to a different tag/branch/sha (e.g.
+      'main' to track the latest unreleased commit instead, at the cost of this action's
+      behavior possibly changing under you between runs).
     required: false
-    default: 'main'
+    default: 'v0.1.0'
   roves-src-path:
     description: 'Where to check out roves-repo, relative to your own repo root.'
     required: false

@@ -63,7 +63,7 @@ jobs:
         id: roves
         uses: DRincs-Productions/roves-action@v1
         with:
-          roves-ref: v0.1.0 # defaults to the latest release tag anyway — see that input's own note below
+          roves-ref: v0.1.1 # defaults to the latest release tag anyway — see that input's own note below
           content-dir: dist
           artifact-name: ${{ matrix.name }}
           release: 'true'
@@ -159,7 +159,7 @@ tuned for a save-data folder that shouldn't be compressed:
     # 'main' to track the latest unreleased commit instead, at the cost of this action's
     # behavior possibly changing under you between runs).
     #
-    # default: v0.1.0
+    # default: v0.1.1
     roves-ref: ''
 
     # Where to check out roves-repo, relative to your own repo root.

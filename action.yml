@@ -31,9 +31,26 @@ inputs:
     description: >-
       Run `mach bootstrap` (installs the native build dependencies mach build/bundle need).
       Set to 'false' only if you already provisioned them yourself in an earlier step (e.g. to
-      share a cache across multiple calls to this action).
+      share a cache across multiple calls to this action). Ignored when use-prebuilt-shell is
+      'true' -- there's nothing to bootstrap for, since nothing gets compiled.
     required: false
     default: 'true'
+  use-prebuilt-shell:
+    description: >-
+      Skip checking out and compiling the engine from source entirely -- download the same
+      prebuilt roves_shell_<platform>[_steam].zip release asset Packmaster itself downloads,
+      at the exact roves-ref tag, and run `mach bundle --bin <extracted binary>` against it.
+      Much faster (no engine compile at all, no native toolchain to install -- GStreamer and
+      friends are already baked into the published shell), at the real cost of every
+      mach-build-time input below (features other than 'steam', target, media-stack,
+      sanitizers, profile selection, icon-png/icon-ico, bin, nightly, ...) no longer being
+      configurable: those flags exist purely to control *how the engine itself compiles*,
+      which doesn't happen at all in this mode. Setting any of them to a non-default value
+      together with this fails the run with a clear error rather than silently ignoring your
+      input. roves-ref must stay an exact published release tag (the default already is) --
+      'main' or any other unreleased ref has no published shell asset to download.
+    required: false
+    default: 'false'
 
   # ── Your game's content ────────────────────────────────────────────────────────
   content-dir:
@@ -268,6 +285,46 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - name: Validate use-prebuilt-shell compatibility
+      if: inputs.use-prebuilt-shell == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        fail=0
+        check() {
+          local name="$1" value="$2" default_desc="$3"
+          if [ "$value" != "$4" ]; then
+            echo "::error::use-prebuilt-shell=true doesn't support '$name' (got '$value') -- a prebuilt shell has a fixed build configuration, and this flag only controls how the engine *compiles*, which doesn't happen in this mode. Leave '$name' at $default_desc, or set use-prebuilt-shell to 'false' (the default) to compile from source with this input instead."
+            fail=1
+          fi
+        }
+        if [ -n "${{ inputs.features }}" ] && [ "${{ inputs.features }}" != "steam" ]; then
+          echo "::error::use-prebuilt-shell=true only supports features='' or features='steam' (got '${{ inputs.features }}') -- only a plain and a Steam-enabled shell variant are published."
+          fail=1
+        fi
+        check target "${{ inputs.target }}" "unset" ""
+        check media-stack "${{ inputs.media-stack }}" "unset" ""
+        check jobs "${{ inputs.jobs }}" "unset" ""
+        check with-asan "${{ inputs.with-asan }}" "'false'" "false"
+        check with-tsan "${{ inputs.with-tsan }}" "'false'" "false"
+        check with-debug-assertions "${{ inputs.with-debug-assertions }}" "'false'" "false"
+        check debug-mozjs "${{ inputs.debug-mozjs }}" "'false'" "false"
+        check with-frame-pointer "${{ inputs.with-frame-pointer }}" "'false'" "false"
+        check use-crown "${{ inputs.use-crown }}" "'false'" "false"
+        check coverage "${{ inputs.coverage }}" "'false'" "false"
+        check android "${{ inputs.android }}" "'false'" "false"
+        check ohos "${{ inputs.ohos }}" "'false'" "false"
+        check win-arm64 "${{ inputs.win-arm64 }}" "'false'" "false"
+        check flavor "${{ inputs.flavor }}" "unset" ""
+        check build-params "${{ inputs.build-params }}" "unset" ""
+        check icon-png "${{ inputs.icon-png }}" "unset" ""
+        check icon-ico "${{ inputs.icon-ico }}" "unset" ""
+        check bin "${{ inputs.bin }}" "unset" ""
+        check nightly "${{ inputs.nightly }}" "unset" ""
+        if [ "$fail" = "1" ]; then
+          exit 1
+        fi
+
     - name: Resolve paths (content-dir/icons are relative to your repo, not the engine checkout)
       id: paths
       shell: bash
@@ -327,7 +384,7 @@ runs:
     # media-stack default here, needs no native media libraries at all). dpkg-dev is required
     # for `mach bundle --deb` but isn't installed by mach bootstrap itself.
     - name: mach bootstrap
-      if: inputs.bootstrap == 'true'
+      if: inputs.bootstrap == 'true' && inputs.use-prebuilt-shell != 'true'
       shell: bash
       working-directory: ${{ inputs.roves-src-path }}
       run: |
@@ -351,7 +408,48 @@ runs:
       shell: pwsh
       run: echo "$env:WIX\bin" >> $env:GITHUB_PATH
 
+    - name: Download prebuilt shell (use-prebuilt-shell=true only)
+      if: inputs.use-prebuilt-shell == 'true'
+      id: prebuilt
+      shell: bash
+      run: |
+        set -euo pipefail
+        case "${{ runner.os }}" in
+          Windows) platform=windows; bin_rel=play.exe ;;
+          macOS) platform=macos; bin_rel="play.app/Contents/MacOS/play" ;;
+          Linux) platform=linux; bin_rel=play ;;
+          *) echo "::error::unsupported runner.os for use-prebuilt-shell: ${{ runner.os }}"; exit 1 ;;
+        esac
+        suffix=""
+        [ "${{ inputs.features }}" = "steam" ] && suffix="_steam"
+
+        dest="${{ github.workspace }}/roves-prebuilt-shell"
+        mkdir -p "$dest"
+        url="https://github.com/${{ inputs.roves-repo }}/releases/download/${{ inputs.roves-ref }}/roves_shell_${platform}${suffix}.zip"
+        echo "Downloading $url"
+        curl -fSL "$url" -o "$dest/shell.zip"
+
+        # `roves_shell_<platform>.zip`'s single top-level folder is always named `roves`
+        # (release.yml's own PACKAGE_NAME) -- see shell.rs's own comment on the same
+        # convention, Packmaster's side of this exact download.
+        if [ "${{ runner.os }}" = "Windows" ]; then
+          pwsh -NoProfile -Command "Expand-Archive -Path '$dest/shell.zip' -DestinationPath '$dest' -Force"
+        else
+          unzip -q "$dest/shell.zip" -d "$dest"
+        fi
+        rm -f "$dest/shell.zip"
+
+        bin_path="$dest/roves/$bin_rel"
+        if [ ! -e "$bin_path" ]; then
+          echo "::error::expected $bin_path after extracting the prebuilt shell -- actual contents:"
+          find "$dest" >&2
+          exit 1
+        fi
+        chmod +x "$bin_path" 2>/dev/null || true
+        echo "bin-path=$bin_path" >> "$GITHUB_OUTPUT"
+
     - name: mach build
+      if: inputs.use-prebuilt-shell != 'true'
       shell: bash
       working-directory: ${{ inputs.roves-src-path }}
       run: |
@@ -397,17 +495,25 @@ runs:
           --content-compression-level "${{ inputs.content-compression-level }}"
           --content-max-pack-size "${{ inputs.content-max-pack-size }}"
         )
-        # Same build-profile-selection flags as `mach build` above — bundle doesn't rebuild
-        # anything, it just needs these to locate the binary that step already produced.
-        [ "${{ inputs.release }}" = "true" ] && args+=(--release)
-        [ "${{ inputs.dev }}" = "true" ] && args+=(--dev)
-        [ "${{ inputs.production }}" = "true" ] && args+=(--prod)
-        [ -n "${{ inputs.profile }}" ] && args+=(--profile "${{ inputs.profile }}")
-        [ "${{ inputs.with-asan }}" = "true" ] && args+=(--with-asan)
-        [ "${{ inputs.with-tsan }}" = "true" ] && args+=(--with-tsan)
-        [ "${{ inputs.coverage }}" = "true" ] && args+=(--coverage)
-        [ -n "${{ inputs.bin }}" ] && args+=(--bin "${{ inputs.bin }}")
-        [ -n "${{ inputs.nightly }}" ] && args+=(--nightly "${{ inputs.nightly }}")
+        if [ "${{ inputs.use-prebuilt-shell }}" = "true" ]; then
+          # No build just happened -- point bundle straight at the extracted download
+          # instead of the usual build-profile-selection flags below, which only exist to
+          # locate a binary `mach build` just produced.
+          args+=(--bin "${{ steps.prebuilt.outputs.bin-path }}")
+        else
+          # Same build-profile-selection flags as `mach build` above — bundle doesn't
+          # rebuild anything, it just needs these to locate the binary that step already
+          # produced.
+          [ "${{ inputs.release }}" = "true" ] && args+=(--release)
+          [ "${{ inputs.dev }}" = "true" ] && args+=(--dev)
+          [ "${{ inputs.production }}" = "true" ] && args+=(--prod)
+          [ -n "${{ inputs.profile }}" ] && args+=(--profile "${{ inputs.profile }}")
+          [ "${{ inputs.with-asan }}" = "true" ] && args+=(--with-asan)
+          [ "${{ inputs.with-tsan }}" = "true" ] && args+=(--with-tsan)
+          [ "${{ inputs.coverage }}" = "true" ] && args+=(--coverage)
+          [ -n "${{ inputs.bin }}" ] && args+=(--bin "${{ inputs.bin }}")
+          [ -n "${{ inputs.nightly }}" ] && args+=(--nightly "${{ inputs.nightly }}")
+        fi
 
         while IFS= read -r glob; do
           [ -n "$glob" ] && args+=(--content-exclude "$glob")

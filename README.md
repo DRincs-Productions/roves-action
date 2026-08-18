@@ -6,11 +6,13 @@ browser tab — from source, and packages your already-built web content into a 
 ready native bundle for macOS, Linux, and Windows: `play.app` / `play` / `play.exe`, or a
 `.deb` on Linux.
 
-It runs `mach build` + `mach bundle` (see
+By default it runs `mach build` + `mach bundle` (see
 [DRincs-Productions/roves](https://github.com/DRincs-Productions/roves)) against a pinned
 checkout of the engine, mirroring that repo's own
 [`.github/workflows/test.yml`](https://github.com/DRincs-Productions/roves/blob/main/.github/workflows/test.yml)
-— generalized so any game's own CI can call it instead of reimplementing that pipeline.
+— generalized so any game's own CI can call it instead of reimplementing that pipeline. Set
+`use-prebuilt-shell: 'true'` to skip compiling the engine altogether and download the same
+prebuilt shell Packmaster itself uses instead — see "Prebuilt shell mode" below.
 
 ## What this action does *not* do
 
@@ -173,6 +175,15 @@ tuned for a save-data folder that shouldn't be compressed:
     #
     # default: true
     bootstrap: true
+
+    # Skip checking out and compiling the engine from source entirely -- download the same
+    # prebuilt shell Packmaster itself downloads, at the exact roves-ref tag, instead. Much
+    # faster, at the cost of every mach-build-time input below (features other than 'steam',
+    # target, media-stack, sanitizers, icon-png/icon-ico, bin, nightly, ...) no longer being
+    # configurable -- see "Prebuilt shell mode" below before turning this on.
+    #
+    # default: false
+    use-prebuilt-shell: false
 
     # ── Your game's content ──────────────────────────────────────────────────────
     # Path (relative to your repo root) to your already-built web content, e.g. a
@@ -461,7 +472,7 @@ Each platform also has one installable alternative, each gated to its own OS the
 | Platform (`runner.os`) | Portable (default) | Installable input |
 | --- | --- | --- |
 | `Linux` | `play` + `.so` deps, flat | `deb: 'true'` → a real `.deb` |
-| `Windows` | `play.exe` + DLLs, flat | `msi: 'true'` → a real `.msi` (needs WiX's `candle`/`light` on `PATH` — see the `msi` input's own note and the "Add WiX Toolset to PATH" step this action runs for you when `msi: 'true'` on `windows-latest`) |
+| `Windows` | `play.exe` + a few DLLs, GStreamer plugins in `lib/` | `msi: 'true'` → a real `.msi` (needs WiX's `candle`/`light` on `PATH` — see the `msi` input's own note and the "Add WiX Toolset to PATH" step this action runs for you when `msi: 'true'` on `windows-latest`) |
 | `macOS` | `play.app` | `dmg: 'true'` → that same `.app`, wrapped in a `.dmg` |
 
 `deb`/`msi`/`dmg` are each silently ignored on the OSes they don't apply to (see "Tips and
@@ -469,6 +480,37 @@ Caveats" below), so a single input set — including turning more than one on at
 stay the same across a matrix; only the one matching the current runner actually does
 anything. `package-name`/`package-version` name and version whichever installable format
 you asked for; they're ignored entirely when none of `deb`/`msi`/`dmg` are set.
+
+## Prebuilt shell mode
+
+`use-prebuilt-shell: 'true'` skips checking out and compiling the engine entirely — it
+downloads the same `roves_shell_<platform>[_steam].zip` release asset
+[Roves Packmaster](https://github.com/DRincs-Productions/roves-ui) itself downloads, at the
+exact `roves-ref` tag, and runs `mach bundle --bin <the extracted binary>` against it. No
+Rust/native toolchain build of the engine at all — just a download plus packing your content
+into it, which is what makes it fast:
+
+```yml
+- uses: DRincs-Productions/roves-action@v1
+  with:
+    content-dir: dist
+    artifact-name: my-game_windows
+    use-prebuilt-shell: 'true'
+```
+
+This trades away every input that only exists to control *how the engine compiles* — a
+prebuilt shell has one fixed build configuration (a `--release` build, the real GStreamer
+media stack, no sanitizers), so `features` (besides `'steam'`, the one published variant),
+`target`, `media-stack`, every sanitizer/debug/`--use-crown`/`--coverage` flag,
+`android`/`ohos`/`win-arm64`, `flavor`, `build-params`, `icon-png`/`icon-ico`, `bin`, and
+`nightly` are all incompatible with it — setting any of them to a non-default value together
+with `use-prebuilt-shell: 'true'` fails the run with a clear error rather than silently
+ignoring your input. Everything else — `content-dir` and all of `mach bundle`'s own inputs
+(`html-file`, `content-compress`, `deb`/`msi`/`dmg`, `diagnostic-script`, ...) — works exactly
+the same either way, since none of that is a build-time concern.
+
+`roves-ref` has to stay an exact published release tag for this to work (the default already
+is one) — `main` or any other unreleased ref has no published shell asset to download.
 
 ## Tips and Caveats
 
@@ -490,11 +532,12 @@ you asked for; they're ignored entirely when none of `deb`/`msi`/`dmg` are set.
   runner is silently ignored rather than erroring, so a single input set (even with more
   than one turned on) can stay the same across a matrix — see "Portable vs. installable
   packages" above.
-- Roves doesn't publish prebuilt binaries (yet) — `mach build` really does compile the engine
-  from source on every call to this action, which is slow (Rust, and a large dependency
-  graph). If your CI runs this often, cache Cargo's registry/target directories yourself
-  around this action (e.g. `actions/cache` keyed on `roves-ref` + your lockfile) — this action
-  doesn't do that for you, since the right cache key/scope depends on your own workflow.
+- By default, `mach build` really does compile the engine from source on every call to this
+  action, which is slow (Rust, and a large dependency graph). If your CI runs this often,
+  either turn on `use-prebuilt-shell` (see below) or cache Cargo's registry/target
+  directories yourself around this action (e.g. `actions/cache` keyed on `roves-ref` + your
+  lockfile) — this action doesn't do the latter for you, since the right cache key/scope
+  depends on your own workflow.
 - This action does not set up Node/npm/etc. for you — building your game's own web content is
   entirely your own step, before calling this action.
 

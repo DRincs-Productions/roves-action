@@ -1,18 +1,21 @@
 # Roves GitHub Action
 
-This GitHub Action builds [Roves](https://github.com/DRincs-Productions/roves) — a customized
-Servo fork used as a runtime for shipping web-based games as real native apps instead of as a
-browser tab — from source, and packages your already-built web content into a double-click-
-ready native bundle for macOS, Linux, and Windows: `play.app` / `play` / `play.exe`, or a
-`.deb` on Linux.
+This GitHub Action packages your already-built web content, using
+[Roves](https://github.com/DRincs-Productions/roves) — a customized Servo fork used as a
+runtime for shipping web-based games as real native apps instead of as a browser tab — into a
+double-click-ready native bundle for macOS, Linux, and Windows: `play.app` / `play` /
+`play.exe`, or a `.deb` on Linux.
 
-By default it runs `mach build` + `mach bundle` (see
-[DRincs-Productions/roves](https://github.com/DRincs-Productions/roves)) against a pinned
-checkout of the engine, mirroring that repo's own
+By default it downloads the same prebuilt shell
+[Roves Packmaster](https://github.com/DRincs-Productions/roves-packmaster) itself uses and
+packs your content into it — same settings surface as Packmaster, no native toolchain to
+install, nothing compiled. Set `advanced-mode: 'true'` to instead check out and compile the
+engine from source with `mach build` + `mach bundle` (see
+[DRincs-Productions/roves](https://github.com/DRincs-Productions/roves)), mirroring that
+repo's own
 [`.github/workflows/test.yml`](https://github.com/DRincs-Productions/roves/blob/main/.github/workflows/test.yml)
-— generalized so any game's own CI can call it instead of reimplementing that pipeline. Set
-`use-prebuilt-shell: 'true'` to skip compiling the engine altogether and download the same
-prebuilt shell Packmaster itself uses instead — see "Prebuilt shell mode" below.
+— slower, but every `mach build` flag becomes available, at your own risk. See "Advanced
+mode: compiling from source" below.
 
 ## What this action does *not* do
 
@@ -65,11 +68,8 @@ jobs:
         id: roves
         uses: DRincs-Productions/roves-action@v1
         with:
-          roves-ref: v0.2.2 # defaults to the latest release tag anyway — see that input's own note below
           content-dir: dist
           artifact-name: ${{ matrix.name }}
-          release: 'true'
-          media-stack: dummy
 
       - uses: actions/upload-artifact@v4
         with:
@@ -118,8 +118,6 @@ jobs:
         with:
           content-dir: dist
           artifact-name: ${{ matrix.name }}
-          release: 'true'
-          media-stack: dummy
 
       - env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -128,8 +126,8 @@ jobs:
 
 **An installable package instead of the default portable binary** — `deb`/`msi`/`dmg` are
 each specific to their own OS (see "Portable vs. installable packages" below), so a
-multi-platform matrix picks the right one per `os`, plus a custom icon and content packing
-tuned for a save-data folder that shouldn't be compressed:
+multi-platform matrix picks the right one per `os`, plus content packing tuned for a
+save-data folder that shouldn't be compressed:
 
 ```yml
 - uses: DRincs-Productions/roves-action@v1
@@ -139,10 +137,22 @@ tuned for a save-data folder that shouldn't be compressed:
     deb: 'true' # msi: 'true' on windows-latest, dmg: 'true' on macos-latest
     package-name: my-game
     package-version: ${{ github.ref_name }}
-    icon-png: assets/icon.png
     content-exclude: |
       saves/**
       local-data/**
+```
+
+**A custom game icon** — `icon-png`/`icon-ico` are compile-time-only inputs (see "Known
+limitation: game icon" below), so they need `advanced-mode: 'true'`:
+
+```yml
+- uses: DRincs-Productions/roves-action@v1
+  with:
+    content-dir: dist
+    artifact-name: my-game_windows
+    advanced-mode: 'true'
+    icon-png: assets/icon.png
+    icon-ico: assets/icon.ico
 ```
 
 ## Usage
@@ -157,9 +167,11 @@ tuned for a save-data folder that shouldn't be compressed:
     roves-repo: ''
 
     # Git ref (branch/tag/sha) of roves-repo to build against. Defaults to the latest
-    # versioned Roves release tag — override to pin to a different tag/branch/sha (e.g.
-    # 'main' to track the latest unreleased commit instead, at the cost of this action's
-    # behavior possibly changing under you between runs).
+    # versioned Roves release tag. In the default, base mode, this must stay an exact
+    # published release tag -- there's a real published shell asset to download only for
+    # those. With advanced-mode: 'true', override to any tag/branch/sha (e.g. 'main' to track
+    # the latest unreleased commit instead, at the cost of this action's behavior possibly
+    # changing under you between runs).
     #
     # default: v0.2.2
     roves-ref: ''
@@ -169,21 +181,23 @@ tuned for a save-data folder that shouldn't be compressed:
     # default: roves-src
     roves-src-path: ''
 
+    # Advanced mode, at your own risk: instead of downloading the same prebuilt shell
+    # Packmaster itself downloads (the default -- same settings as Packmaster, nothing
+    # compiled), check out the engine at roves-ref and build it from source with `mach
+    # build` + `mach bundle`. Slower, but every mach-build-time input below (features other
+    # than 'steam', target, media-stack, sanitizers, icon-png/icon-ico, bin, nightly, ...)
+    # becomes available -- see "Advanced mode: compiling from source" below.
+    #
+    # default: false
+    advanced-mode: false
+
     # Run `mach bootstrap` (installs the native build dependencies mach build/bundle need).
     # Set to 'false' only if you already provisioned them yourself in an earlier step (e.g.
-    # to share a cache across multiple calls to this action).
+    # to share a cache across multiple calls to this action). Ignored unless advanced-mode
+    # is 'true' -- there's nothing to bootstrap for otherwise, since nothing gets compiled.
     #
     # default: true
     bootstrap: true
-
-    # Skip checking out and compiling the engine from source entirely -- download the same
-    # prebuilt shell Packmaster itself downloads, at the exact roves-ref tag, instead. Much
-    # faster, at the cost of every mach-build-time input below (features other than 'steam',
-    # target, media-stack, sanitizers, icon-png/icon-ico, bin, nightly, ...) no longer being
-    # configurable -- see "Prebuilt shell mode" below before turning this on.
-    #
-    # default: false
-    use-prebuilt-shell: false
 
     # ── Your game's content ──────────────────────────────────────────────────────
     # Path (relative to your repo root) to your already-built web content, e.g. a
@@ -192,19 +206,26 @@ tuned for a save-data folder that shouldn't be compressed:
     # required
     content-dir: ''
 
-    # Path (relative to your repo root) to a window/taskbar icon (PNG). See "Known
+    # Path (relative to your repo root) to a window/taskbar icon (PNG). Needs
+    # advanced-mode: 'true' -- it works by copying your file into the engine checkout
+    # before `mach build` compiles it in, so it's a compile-time-only input. See "Known
     # limitation: game icon" below before relying on this.
     #
     # default: unset (keeps Roves' own default branding)
     icon-png: ''
 
     # Path (relative to your repo root) to a Windows .exe icon (multi-size .ico).
-    # Windows-only; ignored on other platforms. Same caveat as icon-png.
+    # Windows-only; ignored on other platforms. Same advanced-mode requirement and caveat
+    # as icon-png.
     #
     # default: unset
     icon-ico: ''
 
     # ── `mach build` — plain upstream Servo flags, none of these are Roves-specific ─
+    # Every one of these needs advanced-mode: 'true' -- they only control how the engine
+    # itself compiles, which only happens in that mode. See "Advanced mode: compiling from
+    # source" below.
+
     # Optimized build ([servo] `--release`).
     #
     # default: false
@@ -417,13 +438,14 @@ tuned for a save-data folder that shouldn't be compressed:
     diagnostic-script: false
 
     # Explicit path to the servoshell binary to bundle, bypassing auto-resolution from the
-    # build-profile flags above ([servo] `--bin`).
+    # build-profile flags above ([servo] `--bin`). Needs advanced-mode: 'true' -- base mode
+    # already points this at the downloaded prebuilt shell itself.
     #
     # default: unset
     bin: ''
 
     # Bundle a dated nightly build instead of a just-built binary ([servo] `--nightly`,
-    # format YYYY-MM-DD).
+    # format YYYY-MM-DD). Needs advanced-mode: 'true', for the same reason as `bin` above.
     #
     # default: unset
     nightly: ''
@@ -481,36 +503,65 @@ stay the same across a matrix; only the one matching the current runner actually
 anything. `package-name`/`package-version` name and version whichever installable format
 you asked for; they're ignored entirely when none of `deb`/`msi`/`dmg` are set.
 
-## Prebuilt shell mode
+## Base mode (the default)
 
-`use-prebuilt-shell: 'true'` skips checking out and compiling the engine entirely — it
-downloads the same `roves_shell_<platform>[_steam].zip` release asset
-[Roves Packmaster](https://github.com/DRincs-Productions/roves-packmaster) itself downloads, at the
-exact `roves-ref` tag, and runs `mach bundle --bin <the extracted binary>` against it. No
+By default (`advanced-mode: 'false'`, which you never need to set explicitly), this action
+skips checking out and compiling the engine entirely — it downloads the same
+`roves_shell_<platform>[_steam].zip` release asset
+[Roves Packmaster](https://github.com/DRincs-Productions/roves-packmaster) itself downloads, at
+the exact `roves-ref` tag, and runs `mach bundle --bin <the extracted binary>` against it. No
 Rust/native toolchain build of the engine at all — just a download plus packing your content
-into it, which is what makes it fast:
+into it, which is what makes it fast, and why it needs no `mach bootstrap` step either:
 
 ```yml
 - uses: DRincs-Productions/roves-action@v1
   with:
     content-dir: dist
     artifact-name: my-game_windows
-    use-prebuilt-shell: 'true'
 ```
 
-This trades away every input that only exists to control *how the engine compiles* — a
-prebuilt shell has one fixed build configuration (a `--release` build, the real GStreamer
-media stack, no sanitizers), so `features` (besides `'steam'`, the one published variant),
-`target`, `media-stack`, every sanitizer/debug/`--use-crown`/`--coverage` flag,
-`android`/`ohos`/`win-arm64`, `flavor`, `build-params`, `icon-png`/`icon-ico`, `bin`, and
-`nightly` are all incompatible with it — setting any of them to a non-default value together
-with `use-prebuilt-shell: 'true'` fails the run with a clear error rather than silently
-ignoring your input. Everything else — `content-dir` and all of `mach bundle`'s own inputs
-(`html-file`, `content-compress`, `deb`/`msi`/`dmg`, `diagnostic-script`, ...) — works exactly
-the same either way, since none of that is a build-time concern.
-
 `roves-ref` has to stay an exact published release tag for this to work (the default already
-is one) — `main` or any other unreleased ref has no published shell asset to download.
+is one) — `main` or any other unreleased ref has no published shell asset to download; use
+advanced mode (below) if you need to build against an unreleased commit.
+
+Every input that only exists to control *how the engine compiles* is incompatible with base
+mode — a prebuilt shell has one fixed build configuration (a `--release` build, the real
+GStreamer media stack, no sanitizers), so `features` (besides `'steam'`, the one published
+variant), `target`, `media-stack`, every sanitizer/debug/`--use-crown`/`--coverage` flag,
+`android`/`ohos`/`win-arm64`, `flavor`, `build-params`, `icon-png`/`icon-ico`, `bin`, and
+`nightly` all need `advanced-mode: 'true'` (see below) — setting any of them to a non-default
+value in base mode fails the run with a clear error rather than silently ignoring your input.
+Everything else — `content-dir` and all of `mach bundle`'s own inputs (`html-file`,
+`content-compress`, `deb`/`msi`/`dmg`, `diagnostic-script`, ...) — works exactly the same in
+either mode, since none of that is a build-time concern.
+
+## Advanced mode: compiling from source
+
+Set `advanced-mode: 'true'` to check out the engine at `roves-ref` and build it from source
+with `mach build` + `mach bundle` instead — mirroring the engine repo's own
+[`.github/workflows/test.yml`](https://github.com/DRincs-Productions/roves/blob/main/.github/workflows/test.yml):
+
+```yml
+- uses: DRincs-Productions/roves-action@v1
+  with:
+    content-dir: dist
+    artifact-name: my-game_windows
+    advanced-mode: 'true'
+    media-stack: dummy
+```
+
+This is slower (compiling Rust, with a large dependency graph, on every call) and needs
+`mach bootstrap` to install the engine's own native build dependencies first (this action
+does that for you, unless `bootstrap: 'false'`) — but every `mach build` flag becomes
+available: cross-compile `target`, extra Cargo `features`, sanitizers, a custom game
+`icon-png`/`icon-ico`, an explicit `bin`/`nightly` to bundle instead of building, and so on.
+`roves-ref` can now be any tag, branch, or sha — including `main`, at the cost of this
+action's behavior possibly changing under you between runs as the engine itself changes.
+
+If your CI runs this often, either cache Cargo's registry/target directories yourself around
+this action (e.g. `actions/cache` keyed on `roves-ref` + your lockfile — this action doesn't
+do that for you, since the right cache key/scope depends on your own workflow), or reconsider
+whether you actually need advanced mode at all for that particular run.
 
 ## Tips and Caveats
 
@@ -532,12 +583,6 @@ is one) — `main` or any other unreleased ref has no published shell asset to d
   runner is silently ignored rather than erroring, so a single input set (even with more
   than one turned on) can stay the same across a matrix — see "Portable vs. installable
   packages" above.
-- By default, `mach build` really does compile the engine from source on every call to this
-  action, which is slow (Rust, and a large dependency graph). If your CI runs this often,
-  either turn on `use-prebuilt-shell` (see below) or cache Cargo's registry/target
-  directories yourself around this action (e.g. `actions/cache` keyed on `roves-ref` + your
-  lockfile) — this action doesn't do the latter for you, since the right cache key/scope
-  depends on your own workflow.
 - This action does not set up Node/npm/etc. for you — building your game's own web content is
   entirely your own step, before calling this action.
 

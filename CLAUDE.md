@@ -25,28 +25,31 @@ notice `roves-ref` pointing at a tag that isn't the engine's latest release, tha
 kind of drift this note exists to catch — fix it (a real commit, same care as any other
 default-changing change), don't assume someone else owns it.
 
-## `use-prebuilt-shell`: design notes
+## `advanced-mode`: design notes
 
 `action.yml` has two entirely different execution paths, both producing the same kind of
-output (a bundled game, ready to zip):
+output (a bundled game, ready to zip). Base mode (the default) is deliberately the *easier,
+safer* path — matching Packmaster's own settings surface — with source compilation demoted
+to an explicit, named opt-in for the cases that genuinely need it:
 
-1. **Compile from source** (the default): checkout the engine at `roves-ref`, `mach
-   bootstrap`, `mach build`, `mach bundle`. Slow, but every `mach build` flag (`features`,
-   `target`, `media-stack`, sanitizers, ...) is available, since this path is the only one
-   that actually compiles anything.
-2. **`use-prebuilt-shell: 'true'`**: skip checkout-and-compile entirely. Download the exact
-   same `roves_shell_<platform>[_steam].zip` release asset
-   [Roves Packmaster](https://github.com/DRincs-Productions/roves-packmaster) itself downloads (see
-   that repo's `src-tauri/src/shell.rs`), at the exact `roves-ref` tag, and run `mach bundle
-   --bin <extracted binary>` against it — still needs a checkout of the engine's own
+1. **Base mode** (`advanced-mode: 'false'`, the default, never needs setting explicitly):
+   skip checkout-and-compile entirely. Download the exact same
+   `roves_shell_<platform>[_steam].zip` release asset
+   [Roves Packmaster](https://github.com/DRincs-Productions/roves-packmaster) itself downloads
+   (see that repo's `src-tauri/src/shell.rs`), at the exact `roves-ref` tag, and run `mach
+   bundle --bin <extracted binary>` against it — still needs a checkout of the engine's own
    `python`/`mach` tooling to actually run `mach bundle` (and a small, fast `cargo build` of
    `support/content-packer`, which `mach bundle` always does regardless of this flag, unless
    `content-compress: none`), but never compiles the engine itself. This is what makes it
    fast — no native toolchain (GStreamer, mozjs, ANGLE, ...) needs installing at all, since
    the downloaded shell already has all of that baked in.
+2. **`advanced-mode: 'true'`**: checkout the engine at `roves-ref`, `mach bootstrap`, `mach
+   build`, `mach bundle`. Slow, but every `mach build` flag (`features`, `target`,
+   `media-stack`, sanitizers, ...) is available, since this is the only path that actually
+   compiles anything.
 
-**Every `mach build`-time input is deliberately incompatible with path 2, and validated as a
-hard error, not silently ignored** (`action.yml`'s "Validate use-prebuilt-shell compatibility"
+**Every `mach build`-time input is deliberately incompatible with base mode, and validated as
+a hard error, not silently ignored** (`action.yml`'s "Validate base-mode compatibility"
 step, which runs first, before checkout, so an incompatible combination fails fast): `target`,
 `media-stack`, every sanitizer/debug/`--use-crown`/`--coverage` flag,
 `android`/`ohos`/`win-arm64`, `flavor`, `build-params`, `icon-png`/`icon-ico`, `bin`,
@@ -54,17 +57,17 @@ step, which runs first, before checkout, so an incompatible combination fails fa
 control *how the engine compiles* — meaningless when nothing gets compiled — and a prebuilt
 shell has exactly one fixed build configuration per platform (a `--release` build, the real
 GStreamer media stack, no sanitizers). Silently ignoring one of these would be worse than
-erroring: a consumer setting `features: 'some-experimental-flag'` alongside
-`use-prebuilt-shell: 'true'` and getting a bundle that quietly doesn't have that feature is a
-much worse failure mode than a clear error telling them why.
+erroring: a consumer setting `features: 'some-experimental-flag'` in base mode and getting a
+bundle that quietly doesn't have that feature is a much worse failure mode than a clear error
+telling them why.
 
-**Why there's no `media-stack: dummy`-equivalent variant for prebuilt mode**: `dummy` shows up
-in this action's own example snippets for compile-from-source specifically to dodge a real CI
+**Why there's no `media-stack: dummy`-equivalent variant for base mode**: `dummy` shows up in
+this action's own example snippets for `advanced-mode: 'true'` specifically to dodge a real CI
 hang — `mach bootstrap`'s GStreamer MSI installer on Windows shells out via a UAC elevation
 prompt that hangs forever with no interactive session (see the engine repo's own
-`release.yml` comments on this same finding). Prebuilt mode never runs `mach bootstrap` at
-all, so that hang can't happen there in the first place — the *only* remaining reason to want
-a dummy-media prebuilt variant would be a genuinely silent game wanting a smaller download,
+`release.yml` comments on this same finding). Base mode never runs `mach bootstrap` at all, so
+that hang can't happen there in the first place — the *only* remaining reason to want a
+dummy-media base-mode variant would be a genuinely silent game wanting a smaller download,
 which isn't a case Packmaster itself supports either. Deliberately kept in parity with
 Packmaster (only plain + `_steam` variants exist) rather than adding a third variant to the
 engine's `release.yml` for a benefit nobody's asked for yet.
@@ -72,7 +75,14 @@ engine's `release.yml` for a benefit nobody's asked for yet.
 **If a new `mach build`/`mach bundle` flag is ever added to `action.yml`** (mirroring a new
 engine flag — see the engine repo's own CLAUDE.md, which requires this action be kept in sync
 with the engine's build/bundle CLI surface in the same turn as any such change there): decide
-whether it's a build-time flag (add it to the "Validate use-prebuilt-shell compatibility"
-step's incompatible list) or a bundle-time flag (works in both paths, no validation needed) —
-don't assume; check whether it actually requires the engine to have just been compiled from
-source, the same way every existing entry in that step's list does.
+whether it's a build-time flag (add it to the "Validate base-mode compatibility" step's
+incompatible list) or a bundle-time flag (works in both paths, no validation needed) — don't
+assume; check whether it actually requires the engine to have just been compiled from source,
+the same way every existing entry in that step's list does.
+
+**This inverted the action's original default** (compile-from-source, with the prebuilt path
+as an opt-in called `use-prebuilt-shell`) — base mode is now the default and source
+compilation is the named, opt-in `advanced-mode`, on the reasoning that most consumers want
+the same easy, fast path Packmaster itself offers, and should have to deliberately reach for
+the slower, riskier one rather than get it by default. Done before this action had any
+published tag, so no real consumer was ever broken by the flip.

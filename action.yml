@@ -1,9 +1,10 @@
 name: 'Build & bundle a Roves game'
 description: >-
-  Builds the Roves engine (a customized Servo fork, github.com/DRincs-Productions/roves) from
-  source and packages your already-built web content into a double-click-ready native bundle
-  (play.exe / play.app / play, or a .deb) via `mach build` + `mach bundle` — mirroring
-  DRincs-Productions/roves's own .github/workflows/test.yml, generalized for any game's CI.
+  Packages your already-built web content into a double-click-ready native bundle (play.exe /
+  play.app / play, or a .deb) using the Roves engine's own prebuilt shell (the same one
+  Packmaster itself downloads) by default -- or, with advanced-mode: 'true', builds the
+  engine (a customized Servo fork, github.com/DRincs-Productions/roves) from source instead,
+  mirroring that repo's own .github/workflows/test.yml.
 author: 'DRincs Productions'
 branding:
   icon: 'package'
@@ -18,39 +19,40 @@ inputs:
   roves-ref:
     description: >-
       Git ref (branch/tag/sha) of roves-repo to build against. Defaults to the latest
-      versioned Roves release tag — override to pin to a different tag/branch/sha (e.g.
-      'main' to track the latest unreleased commit instead, at the cost of this action's
-      behavior possibly changing under you between runs).
+      versioned Roves release tag. In the default, base mode (see advanced-mode below)
+      this must stay an exact published release tag -- there's a real published shell asset
+      to download only for those. With advanced-mode: 'true', override to any
+      tag/branch/sha (e.g. 'main' to track the latest unreleased commit instead, at the cost
+      of this action's behavior possibly changing under you between runs).
     required: false
     default: 'v0.2.2'
   roves-src-path:
     description: 'Where to check out roves-repo, relative to your own repo root.'
     required: false
     default: 'roves-src'
+  advanced-mode:
+    description: >-
+      Advanced mode, at your own risk: instead of downloading the same prebuilt
+      roves_shell_<platform>[_steam].zip release asset Packmaster itself downloads (the
+      default -- same settings as Packmaster, nothing to compile, no native toolchain to
+      install since GStreamer and friends are already baked into the published shell), check
+      out the engine at roves-ref and build it from source with `mach build`, then `mach
+      bundle --bin <the binary that just produced>` against it. Slower, but every
+      mach-build-time input below (features other than 'steam', target, media-stack,
+      sanitizers, profile selection, icon-png/icon-ico, bin, nightly, ...) becomes available --
+      those flags exist purely to control *how the engine itself compiles*, which only
+      happens in this mode. Setting any of them to a non-default value while this is 'false'
+      (the default) fails the run with a clear error rather than silently ignoring your input.
+    required: false
+    default: 'false'
   bootstrap:
     description: >-
       Run `mach bootstrap` (installs the native build dependencies mach build/bundle need).
       Set to 'false' only if you already provisioned them yourself in an earlier step (e.g. to
-      share a cache across multiple calls to this action). Ignored when use-prebuilt-shell is
-      'true' -- there's nothing to bootstrap for, since nothing gets compiled.
+      share a cache across multiple calls to this action). Ignored unless advanced-mode
+      is 'true' -- there's nothing to bootstrap for otherwise, since nothing gets compiled.
     required: false
     default: 'true'
-  use-prebuilt-shell:
-    description: >-
-      Skip checking out and compiling the engine from source entirely -- download the same
-      prebuilt roves_shell_<platform>[_steam].zip release asset Packmaster itself downloads,
-      at the exact roves-ref tag, and run `mach bundle --bin <extracted binary>` against it.
-      Much faster (no engine compile at all, no native toolchain to install -- GStreamer and
-      friends are already baked into the published shell), at the real cost of every
-      mach-build-time input below (features other than 'steam', target, media-stack,
-      sanitizers, profile selection, icon-png/icon-ico, bin, nightly, ...) no longer being
-      configurable: those flags exist purely to control *how the engine itself compiles*,
-      which doesn't happen at all in this mode. Setting any of them to a non-default value
-      together with this fails the run with a clear error rather than silently ignoring your
-      input. roves-ref must stay an exact published release tag (the default already is) --
-      'main' or any other unreleased ref has no published shell asset to download.
-    required: false
-    default: 'false'
 
   # ── Your game's content ────────────────────────────────────────────────────────
   content-dir:
@@ -285,8 +287,8 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Validate use-prebuilt-shell compatibility
-      if: inputs.use-prebuilt-shell == 'true'
+    - name: Validate base-mode compatibility (advanced-mode != 'true')
+      if: inputs.advanced-mode != 'true'
       shell: bash
       run: |
         set -euo pipefail
@@ -294,12 +296,12 @@ runs:
         check() {
           local name="$1" value="$2" default_desc="$3"
           if [ "$value" != "$4" ]; then
-            echo "::error::use-prebuilt-shell=true doesn't support '$name' (got '$value') -- a prebuilt shell has a fixed build configuration, and this flag only controls how the engine *compiles*, which doesn't happen in this mode. Leave '$name' at $default_desc, or set use-prebuilt-shell to 'false' (the default) to compile from source with this input instead."
+            echo "::error::'$name' (got '$value') needs advanced-mode: 'true' -- the default, base mode downloads a prebuilt shell with a fixed build configuration, and this flag only controls how the engine *compiles*, which doesn't happen in that mode. Leave '$name' at $default_desc, or set advanced-mode to 'true' to compile from source with this input instead."
             fail=1
           fi
         }
         if [ -n "${{ inputs.features }}" ] && [ "${{ inputs.features }}" != "steam" ]; then
-          echo "::error::use-prebuilt-shell=true only supports features='' or features='steam' (got '${{ inputs.features }}') -- only a plain and a Steam-enabled shell variant are published."
+          echo "::error::base mode (advanced-mode != 'true') only supports features='' or features='steam' (got '${{ inputs.features }}') -- only a plain and a Steam-enabled shell variant are published."
           fail=1
         fi
         check target "${{ inputs.target }}" "unset" ""
@@ -384,7 +386,7 @@ runs:
     # media-stack default here, needs no native media libraries at all). dpkg-dev is required
     # for `mach bundle --deb` but isn't installed by mach bootstrap itself.
     - name: mach bootstrap
-      if: inputs.bootstrap == 'true' && inputs.use-prebuilt-shell != 'true'
+      if: inputs.bootstrap == 'true' && inputs.advanced-mode == 'true'
       shell: bash
       working-directory: ${{ inputs.roves-src-path }}
       run: |
@@ -408,8 +410,8 @@ runs:
       shell: pwsh
       run: echo "$env:WIX\bin" >> $env:GITHUB_PATH
 
-    - name: Download prebuilt shell (use-prebuilt-shell=true only)
-      if: inputs.use-prebuilt-shell == 'true'
+    - name: Download prebuilt shell (base mode, the default)
+      if: inputs.advanced-mode != 'true'
       id: prebuilt
       shell: bash
       run: |
@@ -418,7 +420,7 @@ runs:
           Windows) platform=windows; bin_rel=play.exe ;;
           macOS) platform=macos; bin_rel="play.app/Contents/MacOS/play" ;;
           Linux) platform=linux; bin_rel=play ;;
-          *) echo "::error::unsupported runner.os for use-prebuilt-shell: ${{ runner.os }}"; exit 1 ;;
+          *) echo "::error::unsupported runner.os for base mode's prebuilt shell download: ${{ runner.os }}"; exit 1 ;;
         esac
         suffix=""
         [ "${{ inputs.features }}" = "steam" ] && suffix="_steam"
@@ -449,7 +451,7 @@ runs:
         echo "bin-path=$bin_path" >> "$GITHUB_OUTPUT"
 
     - name: mach build
-      if: inputs.use-prebuilt-shell != 'true'
+      if: inputs.advanced-mode == 'true'
       shell: bash
       working-directory: ${{ inputs.roves-src-path }}
       run: |
@@ -495,7 +497,7 @@ runs:
           --content-compression-level "${{ inputs.content-compression-level }}"
           --content-max-pack-size "${{ inputs.content-max-pack-size }}"
         )
-        if [ "${{ inputs.use-prebuilt-shell }}" = "true" ]; then
+        if [ "${{ inputs.advanced-mode }}" != "true" ]; then
           # No build just happened -- point bundle straight at the extracted download
           # instead of the usual build-profile-selection flags below, which only exist to
           # locate a binary `mach build` just produced.

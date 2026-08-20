@@ -22,7 +22,7 @@ inputs:
       'main' to track the latest unreleased commit instead, at the cost of this action's
       behavior possibly changing under you between runs).
     required: false
-    default: 'v0.2.1'
+    default: 'v0.2.2'
   roves-src-path:
     description: 'Where to check out roves-repo, relative to your own repo root.'
     required: false

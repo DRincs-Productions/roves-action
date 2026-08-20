@@ -12,32 +12,19 @@ branding:
 
 inputs:
   # ── Roves engine checkout ──────────────────────────────────────────────────────
-  roves-repo:
-    description: 'The Roves engine repo to check out and build. Override only for a fork.'
-    required: false
-    default: 'DRincs-Productions/roves'
-  roves-ref:
-    description: >-
-      Git ref (branch/tag/sha) of roves-repo to build against. Defaults to the latest
-      versioned Roves release tag. In the default, base mode (see advanced-mode below)
-      this must stay an exact published release tag -- there's a real published shell asset
-      to download only for those. With advanced-mode: 'true', override to any
-      tag/branch/sha (e.g. 'main' to track the latest unreleased commit instead, at the cost
-      of this action's behavior possibly changing under you between runs).
-    required: false
-    default: 'v0.2.2'
-  roves-src-path:
-    description: 'Where to check out roves-repo, relative to your own repo root.'
-    required: false
-    default: 'roves-src'
+  # No roves-repo/roves-ref/roves-src-path inputs -- this action always targets
+  # DRincs-Productions/roves at a pinned tag, hardcoded as a literal in the "Checkout Roves
+  # engine source" step's `ref:` and the "Download prebuilt shell" step's release URL below
+  # (see this repo's own CLAUDE.md for the obligation to bump both on every new engine
+  # release).
   advanced-mode:
     description: >-
       Advanced mode, at your own risk: instead of downloading the same prebuilt
       roves_shell_<platform>[_steam].zip release asset Packmaster itself downloads (the
       default -- same settings as Packmaster, nothing to compile, no native toolchain to
       install since GStreamer and friends are already baked into the published shell), check
-      out the engine at roves-ref and build it from source with `mach build`, then `mach
-      bundle --bin <the binary that just produced>` against it. Slower, but every
+      out the pinned engine tag's source and build it from source with `mach build`, then
+      `mach bundle --bin <the binary that just produced>` against it. Slower, but every
       mach-build-time input below (features other than 'steam', target, media-stack,
       sanitizers, profile selection, icon-png/icon-ico, bin, nightly, ...) becomes available --
       those flags exist purely to control *how the engine itself compiles*, which only
@@ -344,15 +331,15 @@ runs:
         fi
         echo "output-abs=$output_abs" >> "$GITHUB_OUTPUT"
 
-        roves_src_abs="${{ github.workspace }}/${{ inputs.roves-src-path }}"
+        roves_src_abs="${{ github.workspace }}/roves-src"
         echo "roves-src-abs=$roves_src_abs" >> "$GITHUB_OUTPUT"
 
     - name: Checkout Roves engine source
       uses: actions/checkout@v4
       with:
-        repository: ${{ inputs.roves-repo }}
-        ref: ${{ inputs.roves-ref }}
-        path: ${{ inputs.roves-src-path }}
+        repository: DRincs-Productions/roves
+        ref: v0.2.2
+        path: roves-src
 
     - name: Copy game icon into the engine checkout
       if: inputs.icon-png != '' || inputs.icon-ico != ''
@@ -377,7 +364,7 @@ runs:
 
     - name: Prefetch pinned rust toolchain
       shell: bash
-      working-directory: ${{ inputs.roves-src-path }}
+      working-directory: roves-src
       run: rustup show
 
     # Windows: mach's own bootstrap shells out to the GStreamer MSI installer via a UAC
@@ -388,7 +375,7 @@ runs:
     - name: mach bootstrap
       if: inputs.bootstrap == 'true' && inputs.advanced-mode == 'true'
       shell: bash
-      working-directory: ${{ inputs.roves-src-path }}
+      working-directory: roves-src
       run: |
         set -euo pipefail
         if [ "${{ runner.os }}" = "Windows" ]; then
@@ -427,7 +414,7 @@ runs:
 
         dest="${{ github.workspace }}/roves-prebuilt-shell"
         mkdir -p "$dest"
-        url="https://github.com/${{ inputs.roves-repo }}/releases/download/${{ inputs.roves-ref }}/roves_shell_${platform}${suffix}.zip"
+        url="https://github.com/DRincs-Productions/roves/releases/download/v0.2.2/roves_shell_${platform}${suffix}.zip"
         echo "Downloading $url"
         curl -fSL "$url" -o "$dest/shell.zip"
 
@@ -453,7 +440,7 @@ runs:
     - name: mach build
       if: inputs.advanced-mode == 'true'
       shell: bash
-      working-directory: ${{ inputs.roves-src-path }}
+      working-directory: roves-src
       run: |
         set -euo pipefail
         args=()
@@ -485,7 +472,7 @@ runs:
 
     - name: mach bundle
       shell: bash
-      working-directory: ${{ inputs.roves-src-path }}
+      working-directory: roves-src
       run: |
         set -euo pipefail
         args=(

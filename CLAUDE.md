@@ -9,21 +9,24 @@ This repo mirrors the engine repo's own `.github/workflows/test.yml` (see this r
 README for that relationship) — it is a separate git repo, not a submodule, checked out as a
 sibling of the engine repo (`../roves` from here) on this machine.
 
-## CRITICAL: keep `roves-ref`'s default pinned to a real, current engine release
+## CRITICAL: keep the pinned engine tag in `action.yml` current
 
-`action.yml`'s `roves-ref` input defaults to a specific engine tag (e.g. `'v0.2.0'`) — every
-consumer of this action that doesn't override `roves-ref` explicitly builds against exactly
-that tag. This is **not** something that updates itself when the engine cuts a new release.
+There is no `roves-repo`/`roves-ref`/`roves-src-path` input anymore (removed — see the
+"design notes" below for why) — this action always targets `DRincs-Productions/roves` at a
+fixed tag, hardcoded as a literal string in two places in `action.yml`: the "Checkout Roves
+engine source" step's `ref:`, and the "Download prebuilt shell" step's release-asset URL.
+`grep -n 'v0\.' action.yml` finds both. Every consumer of this action builds against exactly
+that tag — it is **not** something that updates itself when the engine cuts a new release.
 
 This is the *other side* of an obligation already documented in the engine repo's own
 `CLAUDE.md` ("Cutting a versioned release" → "sync the shell version in `roves-action` and
-`roves-ui`"): every time a new engine tag is cut, `roves-ref`'s `default` here (and the
-matching commented-out example in `README.md`'s usage block) must be bumped to point at it, in
-a real commit — not a drive-by edit, since this changes what every consumer building without
-an explicit `roves-ref` override gets on their next CI run. If you're working in this repo and
-notice `roves-ref` pointing at a tag that isn't the engine's latest release, that's exactly the
-kind of drift this note exists to catch — fix it (a real commit, same care as any other
-default-changing change), don't assume someone else owns it.
+`roves-ui`"): every time a new engine tag is cut, both literal occurrences here (and the
+version mentioned in `README.md`'s "Base mode" section) must be bumped to point at it, in a
+real commit — not a drive-by edit, since this changes what every consumer of this action gets
+on their next CI run. If you're working in this repo and notice the pinned tag isn't the
+engine's latest release, that's exactly the kind of drift this note exists to catch — fix it
+(a real commit, same care as any other default-changing change), don't assume someone else
+owns it.
 
 ## `advanced-mode`: design notes
 
@@ -36,15 +39,15 @@ to an explicit, named opt-in for the cases that genuinely need it:
    skip checkout-and-compile entirely. Download the exact same
    `roves_shell_<platform>[_steam].zip` release asset
    [Roves Packmaster](https://github.com/DRincs-Productions/roves-packmaster) itself downloads
-   (see that repo's `src-tauri/src/shell.rs`), at the exact `roves-ref` tag, and run `mach
-   bundle --bin <extracted binary>` against it — still needs a checkout of the engine's own
-   `python`/`mach` tooling to actually run `mach bundle` (and a small, fast `cargo build` of
-   `support/content-packer`, which `mach bundle` always does regardless of this flag, unless
-   `content-compress: none`), but never compiles the engine itself. This is what makes it
-   fast — no native toolchain (GStreamer, mozjs, ANGLE, ...) needs installing at all, since
+   (see that repo's `src-tauri/src/shell.rs`), at this action's own pinned engine tag, and run
+   `mach bundle --bin <extracted binary>` against it — still needs a checkout of the engine's
+   own `python`/`mach` tooling to actually run `mach bundle` (and a small, fast `cargo build`
+   of `support/content-packer`, which `mach bundle` always does regardless of this flag,
+   unless `content-compress: none`), but never compiles the engine itself. This is what makes
+   it fast — no native toolchain (GStreamer, mozjs, ANGLE, ...) needs installing at all, since
    the downloaded shell already has all of that baked in.
-2. **`advanced-mode: 'true'`**: checkout the engine at `roves-ref`, `mach bootstrap`, `mach
-   build`, `mach bundle`. Slow, but every `mach build` flag (`features`, `target`,
+2. **`advanced-mode: 'true'`**: checkout the engine at that same pinned tag, `mach bootstrap`,
+   `mach build`, `mach bundle`. Slow, but every `mach build` flag (`features`, `target`,
    `media-stack`, sanitizers, ...) is available, since this is the only path that actually
    compiles anything.
 
@@ -86,3 +89,13 @@ compilation is the named, opt-in `advanced-mode`, on the reasoning that most con
 the same easy, fast path Packmaster itself offers, and should have to deliberately reach for
 the slower, riskier one rather than get it by default. Done before this action had any
 published tag, so no real consumer was ever broken by the flip.
+
+**`roves-repo`/`roves-ref`/`roves-src-path` were later removed as inputs entirely** — this
+action now only ever targets `DRincs-Productions/roves` at its own pinned tag (see the
+"CRITICAL" section above), a hardcoded literal instead of an overridable default. Two real
+capabilities were deliberately given up by this: a consumer can no longer point at a fork
+(`roves-repo`) or, in `advanced-mode: 'true'`, at an unreleased branch/sha (`roves-ref`) to
+test against engine changes ahead of a release. Neither had a known real consumer at the time
+of removal (same "no published tag yet" reasoning as the base/advanced-mode flip above) — if
+that need resurfaces, the input would have to come back rather than being worked around, since
+there's no other way to point this action at something other than its own pinned tag.

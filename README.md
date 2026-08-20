@@ -160,31 +160,10 @@ limitation: game icon" below), so they need `advanced-mode: 'true'`:
 ```yml
 - uses: DRincs-Productions/roves-action@v1
   with:
-    # ── Engine checkout ──────────────────────────────────────────────────────────
-    # The Roves engine repo to check out and build. Override only for a fork.
-    #
-    # default: DRincs-Productions/roves
-    roves-repo: ''
-
-    # Git ref (branch/tag/sha) of roves-repo to build against. Defaults to the latest
-    # versioned Roves release tag. In the default, base mode, this must stay an exact
-    # published release tag -- there's a real published shell asset to download only for
-    # those. With advanced-mode: 'true', override to any tag/branch/sha (e.g. 'main' to track
-    # the latest unreleased commit instead, at the cost of this action's behavior possibly
-    # changing under you between runs).
-    #
-    # default: v0.2.2
-    roves-ref: ''
-
-    # Where to check out roves-repo, relative to your own repo root.
-    #
-    # default: roves-src
-    roves-src-path: ''
-
     # Advanced mode, at your own risk: instead of downloading the same prebuilt shell
     # Packmaster itself downloads (the default -- same settings as Packmaster, nothing
-    # compiled), check out the engine at roves-ref and build it from source with `mach
-    # build` + `mach bundle`. Slower, but every mach-build-time input below (features other
+    # compiled), check out the pinned engine tag's source and build it from source with
+    # `mach build` + `mach bundle`. Slower, but every mach-build-time input below (features other
     # than 'steam', target, media-stack, sanitizers, icon-png/icon-ico, bin, nightly, ...)
     # becomes available -- see "Advanced mode: compiling from source" below.
     #
@@ -509,9 +488,11 @@ By default (`advanced-mode: 'false'`, which you never need to set explicitly), t
 skips checking out and compiling the engine entirely — it downloads the same
 `roves_shell_<platform>[_steam].zip` release asset
 [Roves Packmaster](https://github.com/DRincs-Productions/roves-packmaster) itself downloads, at
-the exact `roves-ref` tag, and runs `mach bundle --bin <the extracted binary>` against it. No
-Rust/native toolchain build of the engine at all — just a download plus packing your content
-into it, which is what makes it fast, and why it needs no `mach bootstrap` step either:
+this action's own pinned engine tag (hardcoded in `action.yml`, not a configurable input — see
+"Releasing this action" below for how that pin gets bumped), and runs
+`mach bundle --bin <the extracted binary>` against it. No Rust/native toolchain build of the
+engine at all — just a download plus packing your content into it, which is what makes it
+fast, and why it needs no `mach bootstrap` step either:
 
 ```yml
 - uses: DRincs-Productions/roves-action@v1
@@ -519,10 +500,6 @@ into it, which is what makes it fast, and why it needs no `mach bootstrap` step 
     content-dir: dist
     artifact-name: my-game_windows
 ```
-
-`roves-ref` has to stay an exact published release tag for this to work (the default already
-is one) — `main` or any other unreleased ref has no published shell asset to download; use
-advanced mode (below) if you need to build against an unreleased commit.
 
 Every input that only exists to control *how the engine compiles* is incompatible with base
 mode — a prebuilt shell has one fixed build configuration (a `--release` build, the real
@@ -537,8 +514,8 @@ either mode, since none of that is a build-time concern.
 
 ## Advanced mode: compiling from source
 
-Set `advanced-mode: 'true'` to check out the engine at `roves-ref` and build it from source
-with `mach build` + `mach bundle` instead — mirroring the engine repo's own
+Set `advanced-mode: 'true'` to check out this action's pinned engine tag's source and build it
+from source with `mach build` + `mach bundle` instead — mirroring the engine repo's own
 [`.github/workflows/test.yml`](https://github.com/DRincs-Productions/roves/blob/main/.github/workflows/test.yml):
 
 ```yml
@@ -555,13 +532,13 @@ This is slower (compiling Rust, with a large dependency graph, on every call) an
 does that for you, unless `bootstrap: 'false'`) — but every `mach build` flag becomes
 available: cross-compile `target`, extra Cargo `features`, sanitizers, a custom game
 `icon-png`/`icon-ico`, an explicit `bin`/`nightly` to bundle instead of building, and so on.
-`roves-ref` can now be any tag, branch, or sha — including `main`, at the cost of this
-action's behavior possibly changing under you between runs as the engine itself changes.
+The engine tag itself is still this action's own pinned version — not something you can point
+at an unreleased commit; if you need that, build against a fork of this action instead.
 
 If your CI runs this often, either cache Cargo's registry/target directories yourself around
-this action (e.g. `actions/cache` keyed on `roves-ref` + your lockfile — this action doesn't
-do that for you, since the right cache key/scope depends on your own workflow), or reconsider
-whether you actually need advanced mode at all for that particular run.
+this action (e.g. `actions/cache` keyed on this action's own version + your lockfile — this
+action doesn't do that for you, since the right cache key/scope depends on your own workflow),
+or reconsider whether you actually need advanced mode at all for that particular run.
 
 ## Tips and Caveats
 

@@ -485,7 +485,7 @@ you asked for; they're ignored entirely when none of `deb`/`msi`/`dmg` are set.
 
 `use-prebuilt-shell: 'true'` skips checking out and compiling the engine entirely — it
 downloads the same `roves_shell_<platform>[_steam].zip` release asset
-[Roves Packmaster](https://github.com/DRincs-Productions/roves-ui) itself downloads, at the
+[Roves Packmaster](https://github.com/DRincs-Productions/roves-packmaster) itself downloads, at the
 exact `roves-ref` tag, and runs `mach bundle --bin <the extracted binary>` against it. No
 Rust/native toolchain build of the engine at all — just a download plus packing your content
 into it, which is what makes it fast:

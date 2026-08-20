@@ -36,7 +36,7 @@ output (a bundled game, ready to zip):
    that actually compiles anything.
 2. **`use-prebuilt-shell: 'true'`**: skip checkout-and-compile entirely. Download the exact
    same `roves_shell_<platform>[_steam].zip` release asset
-   [Roves Packmaster](https://github.com/DRincs-Productions/roves-ui) itself downloads (see
+   [Roves Packmaster](https://github.com/DRincs-Productions/roves-packmaster) itself downloads (see
    that repo's `src-tauri/src/shell.rs`), at the exact `roves-ref` tag, and run `mach bundle
    --bin <extracted binary>` against it — still needs a checkout of the engine's own
    `python`/`mach` tooling to actually run `mach bundle` (and a small, fast `cargo build` of

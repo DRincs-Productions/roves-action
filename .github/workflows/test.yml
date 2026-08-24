@@ -1,0 +1,134 @@
+name: 'Test this action against a real game (pixi-vn-react-template)'
+
+# End-to-end smoke test for *this action itself* (action.yml), not for the Roves engine --
+# that's already covered by DRincs-Productions/roves's own .github/workflows/test.yml, which
+# this workflow otherwise mirrors (rolling "test" release, ensure-then-upload idiom, retries
+# on upload). Builds DRincs-Productions/pixi-vn-react-template's actual web content (a real
+# Pixi'VN + React + Vite game template, not a synthetic fixture) and runs it through this
+# repo's own action.yml via `uses: ./` -- i.e. whatever is currently pushed to this repo, not
+# the published DRincs-Productions/roves-action@v1 tag -- across every platform/feature
+# combination base mode supports: windows/macos/linux x plain/steam. Every run overwrites the
+# same rolling "test" GitHub Release on *this* repo; it is not versioned and not meant to be
+# depended on (see release.yml for actual action releases).
+#
+# advanced-mode ('true') is deliberately NOT covered here: it just checks out the engine and
+# runs mach build/bundle, which the engine repo's own test.yml already exercises exhaustively
+# on every one of its own pushes. What this workflow needs to catch is regressions in this
+# action's *own* composite steps -- input wiring, path resolution, the base-mode-compatibility
+# validation, the prebuilt-shell download/extraction, packaging -- against a real consumer's
+# content. Base mode is the path every real consumer of this action actually takes (see
+# README.md's "Base mode" section), so that's what gets tested on every push here.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+env:
+  TEST_RELEASE_TAG: 'test'
+  TEMPLATE_REPO: 'DRincs-Productions/pixi-vn-react-template'
+
+jobs:
+  # ── Create the rolling "test" release exactly once before the matrix starts ────
+  ensure-test-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: ensure release "test" exists
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view "$TEST_RELEASE_TAG" 2>/dev/null || \
+          gh release create "$TEST_RELEASE_TAG" \
+            --title "roves-action end-to-end test build" \
+            --notes "Rolling test build of $TEMPLATE_REPO through this repo's own action.yml (base mode, every platform x plain/steam). Overwritten on every push to main -- not a real release, see release.yml for that. Latest build: commit ${{ github.sha }}." \
+            --prerelease \
+            2>/dev/null || \
+          gh release view "$TEST_RELEASE_TAG" > /dev/null
+
+  # ── Build the template's content, run it through ./action.yml, upload per combo ─
+  build-and-publish:
+    needs: ensure-test-release
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            os_name: windows
+            features: ''
+            suffix: ''
+          - os: windows-latest
+            os_name: windows
+            features: 'steam'
+            suffix: '_steam'
+          - os: macos-latest
+            os_name: macos
+            features: ''
+            suffix: ''
+          - os: macos-latest
+            os_name: macos
+            features: 'steam'
+            suffix: '_steam'
+          - os: ubuntu-latest
+            os_name: linux
+            features: ''
+            suffix: ''
+          - os: ubuntu-latest
+            os_name: linux
+            features: 'steam'
+            suffix: '_steam'
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      # Needed so `uses: ./` below resolves to this repo's own action.yml, checked out at the
+      # commit that triggered this run -- not the published DRincs-Productions/roves-action@v1
+      # tag consumers actually use.
+      - name: checkout this action
+        uses: actions/checkout@v4
+
+      - name: checkout pixi-vn-react-template
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.TEMPLATE_REPO }}
+          path: template
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: build template content
+        shell: bash
+        working-directory: template
+        run: |
+          npm install
+          npm run build
+
+      - name: build & bundle with this action (base mode)
+        id: roves
+        uses: ./
+        with:
+          content-dir: template/dist
+          features: ${{ matrix.features }}
+          artifact-name: pixi-vn-react-template_${{ matrix.os_name }}${{ matrix.suffix }}
+
+      # Retries: every matrix job uploads to the same "test" release concurrently, and
+      # `gh release upload --clobber` (delete-then-reupload) occasionally hits a transient
+      # conflict from another job's own delete/upload landing at the same moment -- same
+      # pattern, same reasoning, as the engine repo's own test.yml.
+      - name: upload to "test" release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          for attempt in 1 2 3; do
+            gh release upload "$TEST_RELEASE_TAG" "${{ steps.roves.outputs.archive-path }}" --clobber && exit 0
+            echo "upload attempt $attempt failed, retrying in $((attempt * 10))s..." >&2
+            sleep $((attempt * 10))
+          done
+          exit 1

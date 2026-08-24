@@ -50,7 +50,7 @@ it was ever confirmed here.
 The tag passed to `git fetch ... origin v<TAG>` in that step (currently `v0.4.0`) is the
 **upstream Servo version** the pinned engine tag above is vendored from — see the engine
 repo's own `CUSTOMIZATIONS.md` top-of-file baseline version, *not* the `DRincs-Productions/roves`
-release tag (`v0.2.3`) tracked elsewhere in this file. These two versions move independently:
+release tag (`v0.2.4`) tracked elsewhere in this file. These two versions move independently:
 bumping the pinned engine tag above to a new roves release does **not** by itself mean this
 Servo tag needs to change — only bump it when that new roves release was itself vendored from
 a different upstream Servo version (a rare, bigger upgrade — see the engine repo's own

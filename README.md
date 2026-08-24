@@ -66,7 +66,7 @@ jobs:
 
       - name: build & bundle with Roves
         id: roves
-        uses: DRincs-Productions/roves-action@v1
+        uses: DRincs-Productions/roves-action@v0
         with:
           content-dir: dist
           artifact-name: ${{ matrix.name }}
@@ -114,7 +114,7 @@ jobs:
       - run: npm install && npm run build
 
       - id: roves
-        uses: DRincs-Productions/roves-action@v1
+        uses: DRincs-Productions/roves-action@v0
         with:
           content-dir: dist
           artifact-name: ${{ matrix.name }}
@@ -130,7 +130,7 @@ multi-platform matrix picks the right one per `os`, plus content packing tuned f
 save-data folder that shouldn't be compressed:
 
 ```yml
-- uses: DRincs-Productions/roves-action@v1
+- uses: DRincs-Productions/roves-action@v0
   with:
     content-dir: dist
     artifact-name: my-game_linux-deb
@@ -146,7 +146,7 @@ save-data folder that shouldn't be compressed:
 limitation: game icon" below), so they need `advanced-mode: 'true'`:
 
 ```yml
-- uses: DRincs-Productions/roves-action@v1
+- uses: DRincs-Productions/roves-action@v0
   with:
     content-dir: dist
     artifact-name: my-game_windows
@@ -158,7 +158,7 @@ limitation: game icon" below), so they need `advanced-mode: 'true'`:
 ## Usage
 
 ```yml
-- uses: DRincs-Productions/roves-action@v1
+- uses: DRincs-Productions/roves-action@v0
   with:
     # Advanced mode, at your own risk: instead of downloading the same prebuilt shell
     # Packmaster itself downloads (the default -- same settings as Packmaster, nothing
@@ -495,7 +495,7 @@ engine at all — just a download plus packing your content into it, which is wh
 fast, and why it needs no `mach bootstrap` step either:
 
 ```yml
-- uses: DRincs-Productions/roves-action@v1
+- uses: DRincs-Productions/roves-action@v0
   with:
     content-dir: dist
     artifact-name: my-game_windows
@@ -519,7 +519,7 @@ from source with `mach build` + `mach bundle` instead — mirroring the engine r
 [`.github/workflows/test.yml`](https://github.com/DRincs-Productions/roves/blob/main/.github/workflows/test.yml):
 
 ```yml
-- uses: DRincs-Productions/roves-action@v1
+- uses: DRincs-Productions/roves-action@v0
   with:
     content-dir: dist
     artifact-name: my-game_windows

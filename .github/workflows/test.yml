@@ -6,7 +6,7 @@ name: 'Test this action against a real game (pixi-vn-react-template)'
 # on upload). Builds DRincs-Productions/pixi-vn-react-template's actual web content (a real
 # Pixi'VN + React + Vite game template, not a synthetic fixture) and runs it through this
 # repo's own action.yml via `uses: ./` -- i.e. whatever is currently pushed to this repo, not
-# the published DRincs-Productions/roves-action@v1 tag -- across every platform/feature
+# the published DRincs-Productions/roves-action@v0 tag -- across every platform/feature
 # combination base mode supports: windows/macos/linux x plain/steam. Every run overwrites the
 # same rolling "test" GitHub Release on *this* repo; it is not versioned and not meant to be
 # depended on (see release.yml for actual action releases).
@@ -85,7 +85,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       # Needed so `uses: ./` below resolves to this repo's own action.yml, checked out at the
-      # commit that triggered this run -- not the published DRincs-Productions/roves-action@v1
+      # commit that triggered this run -- not the published DRincs-Productions/roves-action@v0
       # tag consumers actually use.
       - name: checkout this action
         uses: actions/checkout@v4

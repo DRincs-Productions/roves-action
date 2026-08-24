@@ -2,7 +2,7 @@ name: Release
 
 # Publishes a new version of *this action* (not a Roves game — see the main README for that).
 # Pushing a `vX.Y.Z` tag creates a GitHub Release for it and moves the major-version tag (`vX`)
-# to point at it, so consumers can pin `uses: DRincs-Productions/roves-action@v1` and
+# to point at it, so consumers can pin `uses: DRincs-Productions/roves-action@v0` and
 # automatically get every v1.x.y update without editing their own workflow. This is the same
 # convention actions/checkout, actions/setup-node, etc. all follow — see "Releasing" in this
 # repo's README for the full walkthrough, including the one manual step (Marketplace listing)

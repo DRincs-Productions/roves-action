@@ -341,6 +341,38 @@ runs:
         ref: v0.2.3
         path: roves-src
 
+    # mach's own command loader (python/mach_bootstrap.py's MACH_MODULES list) always loads
+    # python/servo/testing_commands.py, which imports WPT test tooling living under
+    # tests/wpt/ -- a directory DRincs-Productions/roves deliberately excludes from git
+    # (~1.3GB of WPT conformance tests, irrelevant here). Without it, every mach command
+    # except `bootstrap` itself (which has its own fast path skipping this module) crashes
+    # immediately with "ModuleNotFoundError: No module named 'localpaths'", before doing
+    # anything else -- confirmed by reproducing this locally, in both mach build (advanced
+    # mode) and mach bundle (always). We only need the small Python tooling package that
+    # makes those imports resolve (tests/wpt/tests/tools/, ~90MB), not the actual multi-GB
+    # WPT test suite, so sparse-checkout just that from upstream servo/servo (which does
+    # track it) -- mirrors the exact same workaround in DRincs-Productions/roves's own
+    # release.yml, which hits this identical crash the identical way. '0.4.0' is the
+    # upstream Servo tag the pinned roves engine version above is vendored from (see that
+    # engine's own CUSTOMIZATIONS.md) -- keep it in sync whenever the pinned roves tag above
+    # is bumped to a release vendored from a different Servo version.
+    - name: Fetch tests/wpt/tests/tools (mach's command loader needs it to exist)
+      shell: bash
+      working-directory: roves-src
+      run: |
+        set -euo pipefail
+        rm -rf /tmp/roves-action-wpt-tools-src
+        git init -q /tmp/roves-action-wpt-tools-src
+        git -C /tmp/roves-action-wpt-tools-src remote add origin https://github.com/servo/servo.git
+        git -C /tmp/roves-action-wpt-tools-src config core.sparseCheckout true
+        git -C /tmp/roves-action-wpt-tools-src sparse-checkout init --cone
+        git -C /tmp/roves-action-wpt-tools-src sparse-checkout set tests/wpt/tests/tools
+        git -C /tmp/roves-action-wpt-tools-src fetch --depth 1 --filter=blob:none origin v0.4.0
+        git -C /tmp/roves-action-wpt-tools-src checkout FETCH_HEAD
+        mkdir -p tests/wpt
+        cp -r /tmp/roves-action-wpt-tools-src/tests/wpt/tests tests/wpt/tests
+        rm -rf /tmp/roves-action-wpt-tools-src
+
     - name: Copy game icon into the engine checkout
       if: inputs.icon-png != '' || inputs.icon-ico != ''
       shell: bash

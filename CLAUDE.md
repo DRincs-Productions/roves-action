@@ -28,6 +28,36 @@ engine's latest release, that's exactly the kind of drift this note exists to ca
 (a real commit, same care as any other default-changing change), don't assume someone else
 owns it.
 
+## CRITICAL: the "Fetch tests/wpt/tests/tools" step's hardcoded Servo tag
+
+`action.yml`'s "Checkout Roves engine source" step is followed by a "Fetch
+tests/wpt/tests/tools" step — a **third** hardcoded literal (`grep -n 'v0\.' action.yml` above
+only finds two) fetching a small sparse-checkout of `tests/wpt/tests/tools/` from upstream
+`servo/servo`, not from `DRincs-Productions/roves`. This is not optional cleanup: without it,
+every `mach build`/`mach bundle` call in this action crashes immediately with
+`ModuleNotFoundError: No module named 'localpaths'` — `mach`'s own command loader
+unconditionally imports WPT test tooling that lives under `tests/wpt/`, a directory the engine
+repo deliberately excludes from git (~1.3GB of WPT conformance tests). `mach bootstrap` has its
+own fast path that skips this import, which is exactly why this went unnoticed for so long:
+base mode's own "mach bootstrap" step is skipped too (`if: ... && advanced-mode == 'true'`),
+so nothing in this action ever exercised the crashing path until
+`.github/workflows/test.yml` (added to *this* repo, mirroring the engine's own rolling "test"
+release) actually ran base mode end-to-end against a real game's content and hit it on every
+platform. The engine repo's own `CLAUDE.md` had already predicted this exact gap ("mach needs
+tests/wpt/tests/tools/ to exist, even for build/bundle" — "and so would roves-action") before
+it was ever confirmed here.
+
+The tag passed to `git fetch ... origin v<TAG>` in that step (currently `v0.4.0`) is the
+**upstream Servo version** the pinned engine tag above is vendored from — see the engine
+repo's own `CUSTOMIZATIONS.md` top-of-file baseline version, *not* the `DRincs-Productions/roves`
+release tag (`v0.2.3`) tracked elsewhere in this file. These two versions move independently:
+bumping the pinned engine tag above to a new roves release does **not** by itself mean this
+Servo tag needs to change — only bump it when that new roves release was itself vendored from
+a different upstream Servo version (a rare, bigger upgrade — see the engine repo's own
+"Upgrading to a newer Servo version" section). Mirrors the identical workaround in the engine
+repo's own `release.yml` (`SERVO_TAG` env there) — if that value there is ever bumped, check
+whether this literal here needs to move too.
+
 ## `advanced-mode`: design notes
 
 `action.yml` has two entirely different execution paths, both producing the same kind of

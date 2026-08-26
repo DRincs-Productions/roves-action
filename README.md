@@ -482,6 +482,26 @@ stay the same across a matrix; only the one matching the current runner actually
 anything. `package-name`/`package-version` name and version whichever installable format
 you asked for; they're ignored entirely when none of `deb`/`msi`/`dmg` are set.
 
+## Content packing
+
+By default, `mach bundle` doesn't ship `content-dir` as loose, individually browsable
+files — it packs it into a handful of tar+zstd archives, extracted back by the engine
+itself at launch (an eager "boot set" for the html file and whatever it directly
+references, everything else lazily on first request). See
+[DRincs-Productions/roves]'s own README, "Content packing & compression" section, for the
+full design (why, the boot-set/lazy split, the archive layout) — these inputs are a direct
+passthrough to the `mach bundle` flags documented there:
+
+| Input | Description | Default |
+| --- | --- | --- |
+| `content-compress` | `auto` or `none` — pack `content-dir` into archives, or copy it in as loose, uncompressed files with none of the below. | `auto` |
+| `content-compression-level` | zstd compression level used by `content-compress: 'auto'`. Low favors speed. | `1` |
+| `content-max-pack-size` | Max size per content archive (e.g. `500M`, `1G`) before splitting into further parts. | `500M` |
+| `content-exclude` | Globs (relative to `content-dir`) of files to leave loose/uncompressed instead of packing — one per line for more than one. | unset |
+| `content-boot-include` | Globs (relative to `content-dir`), one per line for more than one, of extra files to force into the eager boot set. | unset |
+
+[DRincs-Productions/roves]: https://github.com/DRincs-Productions/roves#content-packing--compression
+
 ## Base mode (the default)
 
 By default (`advanced-mode: 'false'`, which you never need to set explicitly), this action
@@ -565,6 +585,14 @@ or reconsider whether you actually need advanced mode at all for that particular
 
 ## Releasing this action
 
-See [`.github/workflows/release.yml`](.github/workflows/release.yml) and the "Releasing"
-section of the repo's contributor docs for how new versions of *this action itself* get
-published and how the `v1`-style major tag stays up to date.
+Push a `v<major>.<minor>.<patch>` tag (e.g. `v0.1.3`) — see
+[`.github/workflows/release.yml`](.github/workflows/release.yml), which creates a GitHub
+Release for that tag and force-moves the major-version tag (`v0`) to point at it, so consumers
+pinning `uses: DRincs-Productions/roves-action@v0` automatically get every `0.x.y` update.
+
+To also list a release on the [GitHub Marketplace](https://github.com/marketplace?type=actions):
+open that release's **Edit release** page and check **"Publish this Action to the GitHub
+Marketplace"** — a manual, web-UI-only step (requires org-owner permissions and 2FA on the
+publishing account) that this workflow deliberately doesn't attempt to automate. GitHub
+validates `action.yml`'s `name`/`description`/`icon`/`color` at that point (`description` in
+particular has a hard 125-character limit) — fix and re-release if it flags anything.

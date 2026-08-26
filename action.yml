@@ -1,10 +1,5 @@
 name: 'Build & bundle a Roves game'
-description: >-
-  Packages your already-built web content into a double-click-ready native bundle (play.exe /
-  play.app / play, or a .deb) using the Roves engine's own prebuilt shell (the same one
-  Packmaster itself downloads) by default -- or, with advanced-mode: 'true', builds the
-  engine (a customized Servo fork, github.com/DRincs-Productions/roves) from source instead,
-  mirroring that repo's own .github/workflows/test.yml.
+description: 'Bundle your web content into a native desktop app using Roves, a Servo-based embedded game shell.'
 author: 'DRincs Productions'
 branding:
   icon: 'package'

@@ -50,7 +50,7 @@ it was ever confirmed here.
 The tag passed to `git fetch ... origin v<TAG>` in that step (currently `v0.4.0`) is the
 **upstream Servo version** the pinned engine tag above is vendored from — see the engine
 repo's own `CUSTOMIZATIONS.md` top-of-file baseline version, *not* the `DRincs-Productions/roves`
-release tag (`v0.3.0`) tracked elsewhere in this file. These two versions move independently:
+release tag (`v0.4.0`) tracked elsewhere in this file. These two versions move independently:
 bumping the pinned engine tag above to a new roves release does **not** by itself mean this
 Servo tag needs to change — only bump it when that new roves release was itself vendored from
 a different upstream Servo version (a rare, bigger upgrade — see the engine repo's own
@@ -85,7 +85,7 @@ to an explicit, named opt-in for the cases that genuinely need it:
 a hard error, not silently ignored** (`action.yml`'s "Validate base-mode compatibility"
 step, which runs first, before checkout, so an incompatible combination fails fast): `target`,
 `media-stack`, every sanitizer/debug/`--use-crown`/`--coverage` flag,
-`android`/`ohos`/`win-arm64`, `flavor`, `build-params`, `icon-png`/`icon-ico`, `bin`,
+`android`/`ohos`/`win-arm64`, `flavor`, `build-params`, `bin`,
 `nightly`, and `features` for anything other than `''`/`'steam'`. These flags exist purely to
 control *how the engine compiles* — meaningless when nothing gets compiled — and a prebuilt
 shell has exactly one fixed build configuration per platform (a `--release` build, the real
@@ -93,6 +93,16 @@ GStreamer media stack, no sanitizers). Silently ignoring one of these would be w
 erroring: a consumer setting `features: 'some-experimental-flag'` in base mode and getting a
 bundle that quietly doesn't have that feature is a much worse failure mode than a clear error
 telling them why.
+
+**`icon-png`/`icon-ico` are deliberately *not* on that incompatible list** — unlike every
+other input above, they stopped being a `mach build`-time (compile-time) concern once the
+engine's own `mach bundle` gained native `--icon-png`/`--icon-ico` support (see the engine
+repo's own CUSTOMIZATIONS.md, "Runtime + post-build game icon" entry): a runtime file copy
+for the window icon, an `rcedit`-based post-build patch for the Windows `.exe`'s own icon
+resource, both applying identically whether `mach bundle` is packaging a freshly-compiled
+binary or the prebuilt shell base mode downloads. Base mode's own "Resolve paths" step
+resolves both to absolute paths and the "mach bundle" step forwards them unconditionally —
+see that step's own comment for why no `runner.os`/`advanced-mode` gating is needed there.
 
 **Why there's no `media-stack: dummy`-equivalent variant for base mode**: `dummy` shows up in
 this action's own example snippets for `advanced-mode: 'true'` specifically to dodge a real CI

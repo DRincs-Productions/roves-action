@@ -21,7 +21,7 @@ inputs:
       out the pinned engine tag's source and build it from source with `mach build`, then
       `mach bundle --bin <the binary that just produced>` against it. Slower, but every
       mach-build-time input below (features other than 'steam', target, media-stack,
-      sanitizers, profile selection, icon-png/icon-ico, bin, nightly, ...) becomes available --
+      sanitizers, profile selection, bin, nightly, ...) becomes available --
       those flags exist purely to control *how the engine itself compiles*, which only
       happens in this mode. Setting any of them to a non-default value while this is 'false'
       (the default) fails the run with a clear error rather than silently ignoring your input.
@@ -45,18 +45,18 @@ inputs:
     required: true
   icon-png:
     description: >-
-      Path (relative to your repo root) to a window/taskbar icon (PNG). KNOWN LIMITATION:
-      Roves' game-icon fallback (ports/servoshell/build.rs) is currently hardcoded to look for
-      `test-page/public/icon.png` inside the engine checkout, not a generic path — this input
-      works around that by copying your file there before `mach build`. Omit to keep Roves'
-      own default branding.
+      Path (relative to your repo root) to a window/taskbar icon (PNG). Works in base mode
+      too (`mach bundle --icon-png`, applied after packaging, no compile needed) — no longer
+      an advanced-mode-only, compile-time input. Not supported on macOS yet (its own Dock/app
+      icon has no runtime override — see the engine's own CUSTOMIZATIONS.md). Omit to keep
+      Roves' own default branding.
     required: false
     default: ''
   icon-ico:
     description: >-
-      Path (relative to your repo root) to a Windows .exe icon (multi-size .ico). Same
-      hardcoded-path workaround as icon-png, for `test-page/public/icon.ico`. Windows-only;
-      ignored on other platforms.
+      Path (relative to your repo root) to a Windows .exe icon (multi-size .ico). Works in
+      base mode too (`mach bundle --icon-ico`, patches the bundled play.exe's icon resource
+      in place via rcedit, no compile needed). Windows-only; ignored on other platforms.
     required: false
     default: ''
 
@@ -301,8 +301,6 @@ runs:
         check win-arm64 "${{ inputs.win-arm64 }}" "'false'" "false"
         check flavor "${{ inputs.flavor }}" "unset" ""
         check build-params "${{ inputs.build-params }}" "unset" ""
-        check icon-png "${{ inputs.icon-png }}" "unset" ""
-        check icon-ico "${{ inputs.icon-ico }}" "unset" ""
         check bin "${{ inputs.bin }}" "unset" ""
         check nightly "${{ inputs.nightly }}" "unset" ""
         if [ "$fail" = "1" ]; then
@@ -316,6 +314,13 @@ runs:
         set -euo pipefail
         content_dir_abs="$(cd "${{ inputs.content-dir }}" && pwd)"
         echo "content-dir-abs=$content_dir_abs" >> "$GITHUB_OUTPUT"
+
+        if [ -n "${{ inputs.icon-png }}" ]; then
+          echo "icon-png-abs=$(cd "$(dirname "${{ inputs.icon-png }}")" && pwd)/$(basename "${{ inputs.icon-png }}")" >> "$GITHUB_OUTPUT"
+        fi
+        if [ -n "${{ inputs.icon-ico }}" ]; then
+          echo "icon-ico-abs=$(cd "$(dirname "${{ inputs.icon-ico }}")" && pwd)/$(basename "${{ inputs.icon-ico }}")" >> "$GITHUB_OUTPUT"
+        fi
 
         if [ -n "${{ inputs.output }}" ]; then
           mkdir -p "${{ inputs.output }}"
@@ -333,7 +338,7 @@ runs:
       uses: actions/checkout@v4
       with:
         repository: DRincs-Productions/roves
-        ref: v0.3.0
+        ref: v0.4.0
         path: roves-src
 
     # mach's own command loader (python/mach_bootstrap.py's MACH_MODULES list) always loads
@@ -367,19 +372,6 @@ runs:
         mkdir -p tests/wpt
         cp -r /tmp/roves-action-wpt-tools-src/tests/wpt/tests tests/wpt/tests
         rm -rf /tmp/roves-action-wpt-tools-src
-
-    - name: Copy game icon into the engine checkout
-      if: inputs.icon-png != '' || inputs.icon-ico != ''
-      shell: bash
-      run: |
-        set -euo pipefail
-        mkdir -p "${{ steps.paths.outputs.roves-src-abs }}/test-page/public"
-        if [ -n "${{ inputs.icon-png }}" ]; then
-          cp "${{ inputs.icon-png }}" "${{ steps.paths.outputs.roves-src-abs }}/test-page/public/icon.png"
-        fi
-        if [ -n "${{ inputs.icon-ico }}" ]; then
-          cp "${{ inputs.icon-ico }}" "${{ steps.paths.outputs.roves-src-abs }}/test-page/public/icon.ico"
-        fi
 
     - name: Setup python (mach needs a consistent python3 across all 3 OSes)
       uses: actions/setup-python@v5
@@ -441,7 +433,7 @@ runs:
 
         dest="${{ github.workspace }}/roves-prebuilt-shell"
         mkdir -p "$dest"
-        url="https://github.com/DRincs-Productions/roves/releases/download/v0.3.0/roves_shell_${platform}${suffix}.zip"
+        url="https://github.com/DRincs-Productions/roves/releases/download/v0.4.0/roves_shell_${platform}${suffix}.zip"
         echo "Downloading $url"
         curl -fSL "$url" -o "$dest/shell.zip"
 
@@ -551,6 +543,11 @@ runs:
           args+=(--dmg)
         fi
         [ "${{ inputs.diagnostic-script }}" = "true" ] && args+=(--diagnostic-script)
+        # mach bundle itself decides whether either actually applies (--icon-ico only on
+        # Windows, --icon-png not yet on macOS — see post_build_commands.py), so both are
+        # passed unconditionally whenever set; no need to gate on runner.os here too.
+        [ -n "${{ steps.paths.outputs.icon-png-abs }}" ] && args+=(--icon-png "${{ steps.paths.outputs.icon-png-abs }}")
+        [ -n "${{ steps.paths.outputs.icon-ico-abs }}" ] && args+=(--icon-ico "${{ steps.paths.outputs.icon-ico-abs }}")
 
         echo "./mach bundle ${args[*]} ${{ inputs.bundle-params }}"
         ./mach bundle "${args[@]}" ${{ inputs.bundle-params }}

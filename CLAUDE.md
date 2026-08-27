@@ -103,6 +103,12 @@ resource, both applying identically whether `mach bundle` is packaging a freshly
 binary or the prebuilt shell base mode downloads. Base mode's own "Resolve paths" step
 resolves both to absolute paths and the "mach bundle" step forwards them unconditionally —
 see that step's own comment for why no `runner.os`/`advanced-mode` gating is needed there.
+Leaving either unset isn't the same as "no icon": `mach bundle` itself auto-detects an
+`icon.png`/`icon.ico` sitting directly in `content-dir` first, only falling back to Roves'
+own branding if there's genuinely nothing there (see the engine repo's own CUSTOMIZATIONS.md,
+2026-08-27 entry) — this action doesn't need to do anything extra for that, since it already
+forwards `content-dir` unconditionally and the auto-detect logic lives entirely in `mach
+bundle` itself.
 
 **Why there's no `media-stack: dummy`-equivalent variant for base mode**: `dummy` shows up in
 this action's own example snippets for `advanced-mode: 'true'` specifically to dodge a real CI

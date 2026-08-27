@@ -142,15 +142,13 @@ save-data folder that shouldn't be compressed:
       local-data/**
 ```
 
-**A custom game icon** — `icon-png`/`icon-ico` are compile-time-only inputs (see "Known
-limitation: game icon" below), so they need `advanced-mode: 'true'`:
+**A custom game icon** — works in the default base mode, no `advanced-mode` needed:
 
 ```yml
 - uses: DRincs-Productions/roves-action@v0
   with:
     content-dir: dist
     artifact-name: my-game_windows
-    advanced-mode: 'true'
     icon-png: assets/icon.png
     icon-ico: assets/icon.ico
 ```
@@ -164,7 +162,7 @@ limitation: game icon" below), so they need `advanced-mode: 'true'`:
     # Packmaster itself downloads (the default -- same settings as Packmaster, nothing
     # compiled), check out the pinned engine tag's source and build it from source with
     # `mach build` + `mach bundle`. Slower, but every mach-build-time input below (features other
-    # than 'steam', target, media-stack, sanitizers, icon-png/icon-ico, bin, nightly, ...)
+    # than 'steam', target, media-stack, sanitizers, bin, nightly, ...)
     # becomes available -- see "Advanced mode: compiling from source" below.
     #
     # default: false
@@ -185,19 +183,20 @@ limitation: game icon" below), so they need `advanced-mode: 'true'`:
     # required
     content-dir: ''
 
-    # Path (relative to your repo root) to a window/taskbar icon (PNG). Needs
-    # advanced-mode: 'true' -- it works by copying your file into the engine checkout
-    # before `mach build` compiles it in, so it's a compile-time-only input. See "Known
-    # limitation: game icon" below before relying on this.
+    # Path (relative to your repo root) to a window/taskbar icon (PNG). Works in either mode
+    # -- mach bundle applies it after packaging, no compile needed. Not supported on macOS
+    # yet (its own Dock/app icon has no runtime override).
     #
-    # default: unset (keeps Roves' own default branding)
+    # default: auto-detect -- an icon.png sitting directly in content-dir (many bundlers
+    # already emit one there for their own PWA manifest), falling back to Roves' own
+    # branding if there isn't one. Set explicitly to override either.
     icon-png: ''
 
     # Path (relative to your repo root) to a Windows .exe icon (multi-size .ico).
-    # Windows-only; ignored on other platforms. Same advanced-mode requirement and caveat
-    # as icon-png.
+    # Windows-only; ignored on other platforms. Also works in either mode -- mach bundle
+    # patches the bundled play.exe's icon resource in place via rcedit.
     #
-    # default: unset
+    # default: auto-detect -- same as icon-png, but looks for icon.ico in content-dir
     icon-ico: ''
 
     # ── `mach build` — plain upstream Servo flags, none of these are Roves-specific ─
@@ -451,16 +450,19 @@ limitation: game icon" below), so they need `advanced-mode: 'true'`:
 | `bundle-dir` | Absolute path to the unzipped bundle folder (named `artifact-name`) |
 | `archive-path` | Absolute path to `<artifact-name>.zip` |
 
-## Known limitation: game icon
+## Custom game icon
 
-Roves' window/taskbar/`.exe`-icon fallback
-([`ports/servoshell/build.rs`](https://github.com/DRincs-Productions/roves/blob/main/ports/servoshell/build.rs))
-is currently hardcoded to look for `test-page/public/icon.png`/`icon.ico` *inside the engine
-checkout* — a leftover of Roves' own test fixture, not yet a generic per-game mechanism (see
-[CUSTOMIZATIONS.md]'s "Game-supplied icon" entry). The `icon-png`/`icon-ico` inputs work around
-this by copying your files into that exact hardcoded path before `mach build` runs — it works
-today, but is fragile against a future Roves refactor of that fallback path. Omit both to keep
-Roves' own default branding instead.
+`icon-png` sets the window/taskbar icon; `icon-ico` (Windows only) sets the `.exe`'s own icon
+resource — both applied by `mach bundle` itself, after packaging, in either mode (see
+[CUSTOMIZATIONS.md]'s "Runtime + post-build game icon" entry for exactly how). Not supported
+on macOS yet — its own Dock/app icon has no runtime override, and `mach bundle` prints a
+warning and ignores `icon-png` there rather than failing the run.
+
+Omit either and `mach bundle` auto-detects one instead: if `content-dir` itself contains an
+`icon.png`/`icon.ico`, that's used automatically — many bundlers already emit one there for
+their own PWA manifest, so a game that already has one gets its own icon for free, no input
+needed (see [CUSTOMIZATIONS.md]'s 2026-08-27 entry). Falls back to Roves' own default
+branding only if neither the input nor an auto-detected file exists.
 
 [CUSTOMIZATIONS.md]: https://github.com/DRincs-Productions/roves/blob/main/CUSTOMIZATIONS.md
 
@@ -525,12 +527,12 @@ Every input that only exists to control *how the engine compiles* is incompatibl
 mode — a prebuilt shell has one fixed build configuration (a `--release` build, the real
 GStreamer media stack, no sanitizers), so `features` (besides `'steam'`, the one published
 variant), `target`, `media-stack`, every sanitizer/debug/`--use-crown`/`--coverage` flag,
-`android`/`ohos`/`win-arm64`, `flavor`, `build-params`, `icon-png`/`icon-ico`, `bin`, and
+`android`/`ohos`/`win-arm64`, `flavor`, `build-params`, `bin`, and
 `nightly` all need `advanced-mode: 'true'` (see below) — setting any of them to a non-default
 value in base mode fails the run with a clear error rather than silently ignoring your input.
-Everything else — `content-dir` and all of `mach bundle`'s own inputs (`html-file`,
-`content-compress`, `deb`/`msi`/`dmg`, `diagnostic-script`, ...) — works exactly the same in
-either mode, since none of that is a build-time concern.
+Everything else — `content-dir`, `icon-png`/`icon-ico`, and all of `mach bundle`'s own inputs
+(`html-file`, `content-compress`, `deb`/`msi`/`dmg`, `diagnostic-script`, ...) — works exactly
+the same in either mode, since none of that is a build-time concern.
 
 ## Advanced mode: compiling from source
 
@@ -550,8 +552,9 @@ from source with `mach build` + `mach bundle` instead — mirroring the engine r
 This is slower (compiling Rust, with a large dependency graph, on every call) and needs
 `mach bootstrap` to install the engine's own native build dependencies first (this action
 does that for you, unless `bootstrap: 'false'`) — but every `mach build` flag becomes
-available: cross-compile `target`, extra Cargo `features`, sanitizers, a custom game
-`icon-png`/`icon-ico`, an explicit `bin`/`nightly` to bundle instead of building, and so on.
+available: cross-compile `target`, extra Cargo `features`, sanitizers, an explicit
+`bin`/`nightly` to bundle instead of building, and so on (`icon-png`/`icon-ico` already work
+the same in base mode — see above, nothing advanced-mode-specific about them anymore).
 The engine tag itself is still this action's own pinned version — not something you can point
 at an unreleased commit; if you need that, build against a fork of this action instead.
 

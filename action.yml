@@ -338,7 +338,7 @@ runs:
       uses: actions/checkout@v4
       with:
         repository: DRincs-Productions/roves
-        ref: v0.4.8
+        ref: v0.4.9
         path: roves-src
 
     # mach's own command loader (python/mach_bootstrap.py's MACH_MODULES list) always loads
@@ -433,7 +433,7 @@ runs:
 
         dest="${{ github.workspace }}/roves-prebuilt-shell"
         mkdir -p "$dest"
-        url="https://github.com/DRincs-Productions/roves/releases/download/v0.4.8/roves_shell_${platform}${suffix}.zip"
+        url="https://github.com/DRincs-Productions/roves/releases/download/v0.4.9/roves_shell_${platform}${suffix}.zip"
         echo "Downloading $url"
         curl -fSL "$url" -o "$dest/shell.zip"
 

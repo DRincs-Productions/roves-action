@@ -59,6 +59,32 @@ inputs:
       in place via rcedit, no compile needed). Windows-only; ignored on other platforms.
     required: false
     default: ''
+  android-app-name:
+    description: >-
+      [roves] `--android-app-name <NAME>`: override the Android app's launcher label. Requires
+      `android: 'true'`. Defaults to content-dir's own manifest.webmanifest/manifest.json/
+      site.webmanifest `short_name` (falling back to `name`), or Roves' own default label if
+      neither the manifest nor this input provide one.
+    required: false
+    default: ''
+  android-orientation:
+    description: >-
+      [roves] `--android-orientation <VALUE>`: override the Android app's locked screen
+      orientation (standard web app manifest `orientation` vocabulary: any, natural,
+      landscape, landscape-primary, landscape-secondary, portrait, portrait-primary,
+      portrait-secondary). Requires `android: 'true'`. Defaults to content-dir's own manifest
+      `orientation` field, or unlocked (OS/sensor decides) if neither the manifest nor this
+      input set one.
+    required: false
+    default: ''
+  android-theme-color:
+    description: >-
+      [roves] `--android-theme-color <COLOR>`: override the Android app's status bar color
+      (e.g. "#ffffff"). Requires `android: 'true'`. Defaults to content-dir's own manifest
+      `theme_color` field, or leaves the status bar at its normal theme color if neither the
+      manifest nor this input set one.
+    required: false
+    default: ''
 
   # ── `mach build` (stock Servo flags — none of these are Roves-specific) ───────
   release:
@@ -122,7 +148,12 @@ inputs:
     required: false
     default: 'false'
   android:
-    description: '[servo] `--android`: build for the default Android target. Not currently a supported Roves platform — see the engine README.'
+    description: >-
+      [servo] `--android`: build for the default Android target. Early/experimental — debug
+      .apk only, advanced-mode only (no prebuilt Android shell is published to download), see
+      the engine README's "Supported platforms" table. Also controls `mach bundle`'s own
+      `--android` in the "mach bundle" step below, so a game's content actually lands in the
+      built .apk instead of the desktop bundling path running against a `.so`.
     required: false
     default: 'false'
   ohos:
@@ -307,6 +338,19 @@ runs:
           exit 1
         fi
 
+    # Unlike icon-png/icon-ico (which apply to every platform `mach bundle` supports and so
+    # were deliberately left off the base-mode incompatibility check above), these three are
+    # meaningless without android='true' — a desktop bundle has no launcher label/screen
+    # orientation/status bar to set. This runs regardless of advanced-mode/base mode, since
+    # it's checking a different thing than that step (whether these inputs make sense at all
+    # for the target platform, not whether the engine was compiled from source).
+    - name: Validate android-* bundle inputs require android='true'
+      if: inputs.android != 'true' && (inputs.android-app-name != '' || inputs.android-orientation != '' || inputs.android-theme-color != '')
+      shell: bash
+      run: |
+        echo "::error::android-app-name/android-orientation/android-theme-color require android: 'true' -- they configure the Android app's launcher label/screen orientation/status bar, which don't exist on a desktop bundle."
+        exit 1
+
     - name: Resolve paths (content-dir/icons are relative to your repo, not the engine checkout)
       id: paths
       shell: bash
@@ -484,7 +528,15 @@ runs:
         [ -n "${{ inputs.flavor }}" ] && args+=(--flavor "${{ inputs.flavor }}")
         [ "${{ inputs.verbose }}" = "true" ] && args+=(--verbose)
         [ "${{ inputs.very-verbose }}" = "true" ] && args+=(--very-verbose)
-        [ "${{ inputs.no-package }}" = "true" ] && args+=(--no-package)
+        # android='true' always forces --no-package too, regardless of the no-package input's
+        # own value: the "mach bundle" step below always runs next and does its own Gradle
+        # invocation once the game's real content is available -- letting `mach build`'s
+        # auto-package dispatch run first (see the engine's build_commands.py) would just
+        # build an empty-content .apk via Gradle, then immediately rebuild it again with real
+        # content, for no benefit.
+        if [ "${{ inputs.no-package }}" = "true" ] || [ "${{ inputs.android }}" = "true" ]; then
+          args+=(--no-package)
+        fi
 
         echo "./mach build ${args[*]} ${{ inputs.build-params }}"
         ./mach build "${args[@]}" ${{ inputs.build-params }}
@@ -521,6 +573,14 @@ runs:
           [ "${{ inputs.coverage }}" = "true" ] && args+=(--coverage)
           [ -n "${{ inputs.bin }}" ] && args+=(--bin "${{ inputs.bin }}")
           [ -n "${{ inputs.nightly }}" ] && args+=(--nightly "${{ inputs.nightly }}")
+          # `mach build`/`mach bundle` are separate `./mach` invocations (separate processes)
+          # -- self.target isn't remembered between them, so bundle needs --android passed
+          # again here too, exactly like the build step above, or it would silently resolve
+          # servo_binary against the host desktop target instead of the just-built .so (see
+          # the engine's post_build_commands.py `bundle` decorator comment for why this needs
+          # --android specifically, not e.g. --target, to also pick the right _bundle_android
+          # code path).
+          [ "${{ inputs.android }}" = "true" ] && args+=(--android)
         fi
 
         while IFS= read -r glob; do
@@ -548,6 +608,9 @@ runs:
         # passed unconditionally whenever set; no need to gate on runner.os here too.
         [ -n "${{ steps.paths.outputs.icon-png-abs }}" ] && args+=(--icon-png "${{ steps.paths.outputs.icon-png-abs }}")
         [ -n "${{ steps.paths.outputs.icon-ico-abs }}" ] && args+=(--icon-ico "${{ steps.paths.outputs.icon-ico-abs }}")
+        [ -n "${{ inputs.android-app-name }}" ] && args+=(--android-app-name "${{ inputs.android-app-name }}")
+        [ -n "${{ inputs.android-orientation }}" ] && args+=(--android-orientation "${{ inputs.android-orientation }}")
+        [ -n "${{ inputs.android-theme-color }}" ] && args+=(--android-theme-color "${{ inputs.android-theme-color }}")
 
         echo "./mach bundle ${args[*]} ${{ inputs.bundle-params }}"
         ./mach bundle "${args[@]}" ${{ inputs.bundle-params }}

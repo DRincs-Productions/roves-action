@@ -199,6 +199,25 @@ save-data folder that shouldn't be compressed:
     # default: auto-detect -- same as icon-png, but looks for icon.ico in content-dir
     icon-ico: ''
 
+    # Android only (requires android: true below) -- override the app's launcher label.
+    #
+    # default: content-dir's own manifest.webmanifest/manifest.json/site.webmanifest
+    # `short_name` (falling back to `name`), or Roves' own default label
+    android-app-name: ''
+
+    # Android only (requires android: true below) -- override the app's locked screen
+    # orientation. Standard web app manifest vocabulary: any, natural, landscape,
+    # landscape-primary, landscape-secondary, portrait, portrait-primary, portrait-secondary.
+    #
+    # default: content-dir's own manifest `orientation` field, or unlocked (OS/sensor decides)
+    android-orientation: ''
+
+    # Android only (requires android: true below) -- override the app's status bar color
+    # (e.g. "#ffffff").
+    #
+    # default: content-dir's own manifest `theme_color` field, or the normal theme color
+    android-theme-color: ''
+
     # ── `mach build` — plain upstream Servo flags, none of these are Roves-specific ─
     # Every one of these needs advanced-mode: 'true' -- they only control how the engine
     # itself compiles, which only happens in that mode. See "Advanced mode: compiling from
@@ -283,8 +302,10 @@ save-data folder that shouldn't be compressed:
     # default: false
     coverage: false
 
-    # Build for the default Android target ([servo] `--android`). Not a supported Roves
-    # platform yet — see the engine README's platform table.
+    # Build for the default Android target ([servo] `--android`). Early/experimental --
+    # debug .apk only, needs advanced-mode: true (no prebuilt Android shell is published to
+    # download) — see the engine README's platform table, and android-app-name/
+    # android-orientation/android-theme-color above for the bundle-time side of this.
     #
     # default: false
     android: false

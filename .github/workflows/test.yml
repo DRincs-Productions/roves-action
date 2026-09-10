@@ -11,13 +11,21 @@ name: 'Test this action against a real game (pixi-vn-react-template)'
 # same rolling "test" GitHub Release on *this* repo; it is not versioned and not meant to be
 # depended on (see release.yml for actual action releases).
 #
-# advanced-mode ('true') is deliberately NOT covered here: it just checks out the engine and
-# runs mach build/bundle, which the engine repo's own test.yml already exercises exhaustively
-# on every one of its own pushes. What this workflow needs to catch is regressions in this
+# advanced-mode ('true') is mostly NOT covered here: it just checks out the engine and runs
+# mach build/bundle, which the engine repo's own test.yml already exercises exhaustively on
+# every one of its own pushes. What this workflow needs to catch is regressions in this
 # action's *own* composite steps -- input wiring, path resolution, the base-mode-compatibility
 # validation, the prebuilt-shell download/extraction, packaging -- against a real consumer's
 # content. Base mode is the path every real consumer of this action actually takes (see
 # README.md's "Base mode" section), so that's what gets tested on every push here.
+#
+# The one exception is `build-android` below: android: 'true' is advanced-mode-only (no
+# prebuilt Android shell is published for base mode to download -- see action.yml's own
+# `android` input description), so it's the one config base mode can never exercise at all.
+# Separate job, not folded into the matrix above: it needs its own Android SDK/NDK setup
+# (action.yml's own `android: 'true'`-gated steps) that the other six configs don't, and is
+# slow enough (a real from-source Android cross-compile) that it shouldn't block/be blocked
+# by them.
 
 on:
   push:
@@ -128,6 +136,88 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             gh release upload "$TEST_RELEASE_TAG" "${{ steps.roves.outputs.archive-path }}" --clobber && exit 0
+            echo "upload attempt $attempt failed, retrying in $((attempt * 10))s..." >&2
+            sleep $((attempt * 10))
+          done
+          exit 1
+
+  # ── Android: the one config base mode can never cover -- see this file's own top comment ─
+  build-android:
+    needs: ensure-test-release
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout this action
+        uses: actions/checkout@v4
+
+      - name: checkout pixi-vn-react-template
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.TEMPLATE_REPO }}
+          path: template
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: build template content
+        shell: bash
+        working-directory: template
+        run: |
+          npm install
+          npm run build
+
+      - name: stop background apt processes and wait for the dpkg lock
+        shell: bash
+        run: |
+          sudo systemctl stop apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
+          sudo systemctl kill --kill-who=all apt-daily.service apt-daily-upgrade.service unattended-upgrades.service 2>/dev/null || true
+          sudo pkill -9 -f unattended-upgrade 2>/dev/null || true
+          for i in $(seq 1 60); do
+            if ! sudo fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/cache/apt/archives/lock >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::warning::dpkg/apt lock still held after 60s -- proceeding anyway"
+
+      - name: build & bundle with this action (advanced mode, android)
+        id: roves
+        uses: ./
+        with:
+          content-dir: template/dist
+          advanced-mode: 'true'
+          android: 'true'
+          artifact-name: pixi-vn-react-template_android
+
+      # Unlike the base-mode jobs above, uploads the raw .apk under a clean, stable name
+      # instead of the zip `archive-path` output -- an .apk is already the single file that
+      # matters here (nothing else in `bundle-dir` needs preserving the way a desktop
+      # bundle's exe+DLLs layout does), and a bare .apk is what anyone grabbing this to
+      # actually sideload/test wants, not one more zip to extract first.
+      - name: locate built APK
+        id: apk
+        shell: bash
+        run: |
+          APK=$(find "${{ steps.roves.outputs.bundle-dir }}" -iname '*.apk' | head -1)
+          if [ -z "$APK" ]; then
+            echo "::error::no .apk found under ${{ steps.roves.outputs.bundle-dir }} -- contents:"
+            find "${{ steps.roves.outputs.bundle-dir }}"
+            exit 1
+          fi
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+
+      - name: upload to "test" release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cp "${{ steps.apk.outputs.path }}" roves_action_android_debug.apk
+          for attempt in 1 2 3; do
+            gh release upload "$TEST_RELEASE_TAG" roves_action_android_debug.apk --clobber && exit 0
             echo "upload attempt $attempt failed, retrying in $((attempt * 10))s..." >&2
             sleep $((attempt * 10))
           done

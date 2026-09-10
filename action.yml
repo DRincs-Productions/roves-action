@@ -430,6 +430,80 @@ runs:
       working-directory: roves-src
       run: rustup show
 
+    # Android cross builds only run on Linux/macOS hosts (enforced by
+    # python/servo/platform/build_target.py's AndroidTarget on the engine side) -- and
+    # separately, the engine's own support/android/apk/servoview/build.gradle.kts invokes
+    # `ndk-build` (no `.cmd` extension) directly, which doesn't resolve on Windows even where
+    # the cross-compile itself would otherwise be attempted (see the engine repo's own
+    # TODO.md). Fail fast with a clear reason instead of a confusing failure deep inside
+    # `mach build`/Gradle.
+    - name: Reject android='true' on Windows
+      if: inputs.android == 'true' && runner.os == 'Windows'
+      shell: bash
+      run: |
+        echo "::error::android: 'true' isn't supported when this action runs on a Windows runner -- Servo's own Android cross-compile support is Linux/macOS-host-only, and separately the engine's Gradle project invokes 'ndk-build' with no .cmd fallback. Use a Linux or macOS runner for an android: 'true' job."
+        exit 1
+
+    # Mirrors the identical setup in the engine repo's own .github/workflows/android.yml --
+    # see that file's own comments for the full reasoning behind each choice below
+    # (cmdline-tools installed fresh rather than trusting whatever's preinstalled, NDK/
+    # platform package versions resolved dynamically rather than hardcoded). Keep both in
+    # sync if either ever changes.
+    - name: Install Android SDK cmdline-tools (android='true' only)
+      if: inputs.android == 'true'
+      shell: bash
+      run: |
+        mkdir -p "$HOME/android-sdk/cmdline-tools"
+        curl -fsSL -o /tmp/cmdline-tools.zip \
+          "https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip"
+        unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools-extract
+        rm /tmp/cmdline-tools.zip
+        mv /tmp/cmdline-tools-extract/cmdline-tools "$HOME/android-sdk/cmdline-tools/latest"
+        echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> "$GITHUB_ENV"
+        echo "ANDROID_HOME=$HOME/android-sdk" >> "$GITHUB_ENV"
+        echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+        echo "$HOME/android-sdk/platform-tools" >> "$GITHUB_PATH"
+
+    - name: Install Android SDK components + NDK r28 (android='true' only)
+      if: inputs.android == 'true'
+      shell: bash
+      env:
+        # support/android/apk/servoapp/build.gradle.kts's `android {}` block, engine-side --
+        # keep in sync with that file (and the engine's own android.yml, which targets the
+        # same values).
+        ANDROID_COMPILE_SDK: '37'
+        ANDROID_BUILD_TOOLS: '36.0.0'
+      run: |
+        yes | sdkmanager --sdk_root="$ANDROID_SDK_ROOT" --channel=3 --licenses >/dev/null || true
+
+        PLATFORM_PKG=$(sdkmanager --sdk_root="$ANDROID_SDK_ROOT" --channel=3 --list 2>/dev/null \
+          | grep -oE "platforms;android-${ANDROID_COMPILE_SDK}(\.[0-9]+)?(-ext[0-9]+)?" \
+          | grep -v -- '-beta\|-rc' | sort -V | tail -1)
+        if [ -z "$PLATFORM_PKG" ]; then
+          echo "::error::no platforms;android-${ANDROID_COMPILE_SDK}* package advertised by sdkmanager --list"
+          exit 1
+        fi
+        echo "Installing $PLATFORM_PKG"
+        sdkmanager --sdk_root="$ANDROID_SDK_ROOT" --channel=3 "platform-tools" "$PLATFORM_PKG" "build-tools;${ANDROID_BUILD_TOOLS}"
+
+        NDK_PKG=$(sdkmanager --sdk_root="$ANDROID_SDK_ROOT" --channel=3 --list 2>/dev/null | grep -oE 'ndk;28\.[0-9]+\.[0-9]+' | sort -V | tail -1)
+        if [ -z "$NDK_PKG" ]; then
+          echo "::error::no NDK r28.x package advertised by sdkmanager --list -- Servo currently only supports NDK r28, see the engine's own build_target.py"
+          exit 1
+        fi
+        echo "Installing $NDK_PKG"
+        sdkmanager --sdk_root="$ANDROID_SDK_ROOT" --channel=3 "$NDK_PKG"
+
+        NDK_VERSION="${NDK_PKG#ndk;}"
+        echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+    - name: Setup JDK (Gradle/AGP toolchain, android='true' only)
+      if: inputs.android == 'true'
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '21'
+
     # Windows: mach's own bootstrap shells out to the GStreamer MSI installer via a UAC
     # elevation prompt, which just hangs forever with no interactive session — skip it with
     # --skip-platform, safe as long as media-stack=gstreamer isn't actually needed (dummy, the

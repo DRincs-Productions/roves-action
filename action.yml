@@ -382,7 +382,7 @@ runs:
       uses: actions/checkout@v4
       with:
         repository: DRincs-Productions/roves
-        ref: v0.4.10
+        ref: main # TEMPORARY: testing the android fixes on main before cutting v0.4.11 -- revert to v0.4.10
         path: roves-src
 
     # mach's own command loader (python/mach_bootstrap.py's MACH_MODULES list) always loads

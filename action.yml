@@ -430,18 +430,19 @@ runs:
       working-directory: roves-src
       run: rustup show
 
-    # Android cross builds only run on Linux/macOS hosts (enforced by
-    # python/servo/platform/build_target.py's AndroidTarget on the engine side) -- and
-    # separately, the engine's own support/android/apk/servoview/build.gradle.kts invokes
-    # `ndk-build` (no `.cmd` extension) directly, which doesn't resolve on Windows even where
-    # the cross-compile itself would otherwise be attempted (see the engine repo's own
-    # TODO.md). Fail fast with a clear reason instead of a confusing failure deep inside
-    # `mach build`/Gradle.
+    # Android cross builds only run on Linux/macOS hosts -- enforced by
+    # python/servo/platform/build_target.py's AndroidTarget on the engine side, independent of
+    # anything this action does. (A second, narrower Windows gap -- the engine's own Gradle
+    # project invoking `ndk-build` with no `.cmd` fallback -- was fixed upstream as of engine
+    # tag v0.4.11, but that alone doesn't lift this restriction: `mach build --android` on a
+    # Windows host has never been exercised in the engine's own CI, only reasoned about at the
+    # code level, see the engine repo's own TODO.md.) Fail fast with a clear reason instead of
+    # a confusing failure deep inside `mach build`/Gradle.
     - name: Reject android='true' on Windows
       if: inputs.android == 'true' && runner.os == 'Windows'
       shell: bash
       run: |
-        echo "::error::android: 'true' isn't supported when this action runs on a Windows runner -- Servo's own Android cross-compile support is Linux/macOS-host-only, and separately the engine's Gradle project invokes 'ndk-build' with no .cmd fallback. Use a Linux or macOS runner for an android: 'true' job."
+        echo "::error::android: 'true' isn't supported when this action runs on a Windows runner -- Servo's own Android cross-compile support is Linux/macOS-host-only (python/servo/platform/build_target.py's AndroidTarget, unrelated to this action). Use a Linux or macOS runner for an android: 'true' job."
         exit 1
 
     # Mirrors the identical setup in the engine repo's own .github/workflows/android.yml --

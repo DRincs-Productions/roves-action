@@ -9,6 +9,22 @@ This repo mirrors the engine repo's own `.github/workflows/test.yml` (see this r
 README for that relationship) — it is a separate git repo, not a submodule, checked out as a
 sibling of the engine repo (`../roves` from here) on this machine.
 
+## Standing authorization: autonomous CI/push, and GitHub PAT usage
+
+The user has given standing permission to push and run/watch CI
+autonomously across this whole ecosystem (this repo, `../roves`, `../roves-ui`/Packmaster,
+and the rest) without stopping to ask first — see `../roves/CLAUDE.md`'s "Standing
+authorization: autonomous CI/push/release loop" section for the full detail (report honestly
+if asked directly whether something's done; don't claim it prematurely, and this doesn't
+cover genuinely destructive actions outside the normal build/test/release loop).
+
+When the user shares a GitHub PAT for reading Actions logs/annotations: it's **read-only** —
+a write call like re-running failed jobs will 403 by design, use a real `git push` (or an
+empty commit, `git commit --allow-empty`, when retrying after a transient flake with no real
+code change) instead. Never persist it to a file or commit; re-export it fresh in every
+command that needs it (env vars don't survive across separate tool calls here); if it starts
+401ing, say so and ask for a fresh one. Full detail in `../roves/CLAUDE.md`.
+
 ## CRITICAL: keep the pinned engine tag in `action.yml` current
 
 There is no `roves-repo`/`roves-ref`/`roves-src-path` input anymore (removed — see the

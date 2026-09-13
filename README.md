@@ -302,10 +302,14 @@ save-data folder that shouldn't be compressed:
     # default: false
     coverage: false
 
-    # Build for the default Android target ([servo] `--android`). Early/experimental --
-    # debug .apk only, needs advanced-mode: true (no prebuilt Android shell is published to
-    # download) — see the engine README's platform table, and android-app-name/
-    # android-orientation/android-theme-color above for the bundle-time side of this.
+    # Package this game as a native Android WebView APK ([roves]). Doesn't compile Servo or
+    # the Rust engine at all -- as of the engine's 2026-09-13 mobile pivot to native WebView,
+    # this only needs a JDK + the Android SDK's platform/build-tools, no NDK. Still needs
+    # advanced-mode: true (an engine source checkout for mach's own Python tooling and the
+    # Android Gradle project), but works on any runner OS now, not just Linux/macOS. Early/
+    # experimental -- debug .apk only, no prebuilt Android shell is published to download —
+    # see the engine README's platform table, and android-app-name/android-orientation/
+    # android-theme-color above for the bundle-time side of this.
     #
     # default: false
     android: false

@@ -149,11 +149,15 @@ inputs:
     default: 'false'
   android:
     description: >-
-      [servo] `--android`: build for the default Android target. Early/experimental — debug
-      .apk only, advanced-mode only (no prebuilt Android shell is published to download), see
-      the engine README's "Supported platforms" table. Also controls `mach bundle`'s own
-      `--android` in the "mach bundle" step below, so a game's content actually lands in the
-      built .apk instead of the desktop bundling path running against a `.so`.
+      [roves] Package this game as a native Android WebView APK instead of a desktop bundle.
+      Doesn't compile Servo or the Rust engine at all as of the engine's 2026-09-13 mobile
+      pivot to native WebView (Android WebView/iOS WKWebView instead of Servo) — see the
+      engine repo's own `support/MOBILE.md`/CUSTOMIZATIONS.md. Still requires
+      `advanced-mode: 'true'` (this needs an engine source checkout for `mach bundle`'s own
+      Python tooling and the Android Gradle project, even though nothing gets cross-compiled),
+      but no longer needs the NDK, and no longer needs a Linux/macOS runner specifically.
+      Early/experimental — debug .apk only, no prebuilt Android shell is published to
+      download, see the engine README's "Supported platforms" table.
     required: false
     default: 'false'
   ohos:
@@ -430,25 +434,20 @@ runs:
       working-directory: roves-src
       run: rustup show
 
-    # Android cross builds only run on Linux/macOS hosts -- enforced by
-    # python/servo/platform/build_target.py's AndroidTarget on the engine side, independent of
-    # anything this action does. (A second, narrower Windows gap -- the engine's own Gradle
-    # project invoking `ndk-build` with no `.cmd` fallback -- was fixed upstream as of engine
-    # tag v0.4.11, but that alone doesn't lift this restriction: `mach build --android` on a
-    # Windows host has never been exercised in the engine's own CI, only reasoned about at the
-    # code level, see the engine repo's own TODO.md.) Fail fast with a clear reason instead of
-    # a confusing failure deep inside `mach build`/Gradle.
-    - name: Reject android='true' on Windows
-      if: inputs.android == 'true' && runner.os == 'Windows'
-      shell: bash
-      run: |
-        echo "::error::android: 'true' isn't supported when this action runs on a Windows runner -- Servo's own Android cross-compile support is Linux/macOS-host-only (python/servo/platform/build_target.py's AndroidTarget, unrelated to this action). Use a Linux or macOS runner for an android: 'true' job."
-        exit 1
-
+    # As of the engine's 2026-09-13 mobile pivot (Servo -> native WebView for Android/iOS,
+    # see the engine repo's own CUSTOMIZATIONS.md, "Mobile pivots from Servo to native
+    # WebView"), `mach bundle --android` no longer compiles anything -- no NDK, no Rust
+    # cross-compile, no `mach build --android` prerequisite (see `_bundle_android`'s own
+    # doc comment, engine-side). That's why the "mach build" step below now skips itself
+    # for android='true' entirely, and why there's no more Linux/macOS-only Windows
+    # restriction here (that restriction was about Rust cross-compilation, which no longer
+    # happens) or NDK download -- only a JDK + the Android SDK's platform/build-tools are
+    # needed now, for Gradle itself.
+    #
     # Mirrors the identical setup in the engine repo's own .github/workflows/android.yml --
     # see that file's own comments for the full reasoning behind each choice below
-    # (cmdline-tools installed fresh rather than trusting whatever's preinstalled, NDK/
-    # platform package versions resolved dynamically rather than hardcoded). Keep both in
+    # (cmdline-tools installed fresh rather than trusting whatever's preinstalled, the
+    # platform package version resolved dynamically rather than hardcoded). Keep both in
     # sync if either ever changes.
     - name: Install Android SDK cmdline-tools (android='true' only)
       if: inputs.android == 'true'
@@ -465,7 +464,7 @@ runs:
         echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
         echo "$HOME/android-sdk/platform-tools" >> "$GITHUB_PATH"
 
-    - name: Install Android SDK components + NDK r28 (android='true' only)
+    - name: Install Android SDK components (android='true' only)
       if: inputs.android == 'true'
       shell: bash
       env:
@@ -487,23 +486,12 @@ runs:
         echo "Installing $PLATFORM_PKG"
         sdkmanager --sdk_root="$ANDROID_SDK_ROOT" --channel=3 "platform-tools" "$PLATFORM_PKG" "build-tools;${ANDROID_BUILD_TOOLS}"
 
-        NDK_PKG=$(sdkmanager --sdk_root="$ANDROID_SDK_ROOT" --channel=3 --list 2>/dev/null | grep -oE 'ndk;28\.[0-9]+\.[0-9]+' | sort -V | tail -1)
-        if [ -z "$NDK_PKG" ]; then
-          echo "::error::no NDK r28.x package advertised by sdkmanager --list -- Servo currently only supports NDK r28, see the engine's own build_target.py"
-          exit 1
-        fi
-        echo "Installing $NDK_PKG"
-        sdkmanager --sdk_root="$ANDROID_SDK_ROOT" --channel=3 "$NDK_PKG"
-
-        NDK_VERSION="${NDK_PKG#ndk;}"
-        echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
-
     - name: Setup JDK (Gradle/AGP toolchain, android='true' only)
       if: inputs.android == 'true'
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
-        java-version: '21'
+        java-version: '17'
 
     # Windows: mach's own bootstrap shells out to the GStreamer MSI installer via a UAC
     # elevation prompt, which just hangs forever with no interactive session — skip it with
@@ -576,7 +564,13 @@ runs:
         echo "bin-path=$bin_path" >> "$GITHUB_OUTPUT"
 
     - name: mach build
-      if: inputs.advanced-mode == 'true'
+      # Skipped for android='true': `mach bundle --android` no longer needs a prior `mach
+      # build` at all as of the engine's 2026-09-13 mobile pivot (see the engine repo's own
+      # CUSTOMIZATIONS.md, "Mobile pivots from Servo to native WebView") -- `_bundle_android`
+      # doesn't compile or look for `libservoshell.so` anymore, it packages the game straight
+      # from source into a Gradle project. Running `mach build --android` here would just
+      # cross-compile a native library nothing in the resulting APK references.
+      if: inputs.advanced-mode == 'true' && inputs.android != 'true'
       shell: bash
       working-directory: roves-src
       run: |

@@ -12,7 +12,7 @@ sibling of the engine repo (`../roves` from here) on this machine.
 ## Standing authorization: autonomous CI/push, and GitHub PAT usage
 
 The user has given standing permission to push and run/watch CI
-autonomously across this whole ecosystem (this repo, `../roves`, `../roves-ui`/Packmaster,
+autonomously across this whole ecosystem (this repo, `../roves`, `../roves-packmaster`/Packmaster,
 and the rest) without stopping to ask first — see `../roves/CLAUDE.md`'s "Standing
 authorization: autonomous CI/push/release loop" section for the full detail (report honestly
 if asked directly whether something's done; don't claim it prematurely, and this doesn't
@@ -36,7 +36,7 @@ that tag — it is **not** something that updates itself when the engine cuts a 
 
 This is the *other side* of an obligation already documented in the engine repo's own
 `CLAUDE.md` ("Cutting a versioned release" → "sync the shell version in `roves-action` and
-`roves-ui`"): every time a new engine tag is cut, both literal occurrences here (and the
+`roves-packmaster`"): every time a new engine tag is cut, both literal occurrences here (and the
 version mentioned in `README.md`'s "Base mode" section) must be bumped to point at it, in a
 real commit — not a drive-by edit, since this changes what every consumer of this action gets
 on their next CI run. If you're working in this repo and notice the pinned tag isn't the

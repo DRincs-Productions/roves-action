@@ -19,12 +19,12 @@ name: 'Test this action against a real game (pixi-vn-react-template)'
 # content. Base mode is the path every real consumer of this action actually takes (see
 # README.md's "Base mode" section), so that's what gets tested on every push here.
 #
-# The one exception is `build-android` below: android: 'true' is advanced-mode-only (no
-# prebuilt Android shell is published for base mode to download -- see action.yml's own
-# `android` input description), so it's the one config base mode can never exercise at all.
-# Separate job, not folded into the matrix above: it needs its own Android SDK/NDK setup
-# (action.yml's own `android: 'true'`-gated steps) that the other six configs don't, and is
-# slow enough (a real from-source Android cross-compile) that it shouldn't block/be blocked
+# The two exceptions are `build-android`/`build-ios` below: both are advanced-mode-only (no
+# prebuilt Android/iOS shell is published for base mode to download -- see action.yml's own
+# `android`/`ios` input descriptions), so they're the two configs base mode can never exercise
+# at all. Separate jobs, not folded into the matrix above: each needs its own platform-specific
+# setup (a JDK + Android SDK, or Xcode/XcodeGen on a macos-latest runner) that the other six
+# configs don't, and each is slow/differently-shaped enough that it shouldn't block/be blocked
 # by them.
 
 on:
@@ -141,7 +141,7 @@ jobs:
           done
           exit 1
 
-  # ── Android: the one config base mode can never cover -- see this file's own top comment ─
+  # ── Android: one of the two configs base mode can never cover -- see top comment ────────
   build-android:
     needs: ensure-test-release
     permissions:
@@ -218,6 +218,73 @@ jobs:
           cp "${{ steps.apk.outputs.path }}" roves_action_android_debug.apk
           for attempt in 1 2 3; do
             gh release upload "$TEST_RELEASE_TAG" roves_action_android_debug.apk --clobber && exit 0
+            echo "upload attempt $attempt failed, retrying in $((attempt * 10))s..." >&2
+            sleep $((attempt * 10))
+          done
+          exit 1
+
+  # ── iOS: the other config base mode can never cover -- see this file's own top comment ──
+  build-ios:
+    needs: ensure-test-release
+    permissions:
+      contents: write
+    runs-on: macos-latest
+    steps:
+      - name: checkout this action
+        uses: actions/checkout@v4
+
+      - name: checkout pixi-vn-react-template
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.TEMPLATE_REPO }}
+          path: template
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: build template content
+        shell: bash
+        working-directory: template
+        run: |
+          npm install
+          npm run build
+
+      - name: build & bundle with this action (advanced mode, ios)
+        id: roves
+        uses: ./
+        with:
+          content-dir: template/dist
+          advanced-mode: 'true'
+          ios: 'true'
+          artifact-name: pixi-vn-react-template_ios
+
+      # Unlike build-android's single .apk file, the deliverable here is the whole staged
+      # Xcode project directory (App.swift/www/roves-brand/Info.plist/project.json plus the
+      # XcodeGen-generated .xcodeproj) -- there's no single file that "is" the output the way
+      # an .apk is, so this uploads the archive-path zip this action already produced (same
+      # as the base-mode jobs above), just under a clean, stable name instead of one that
+      # varies by matrix entry.
+      - name: verify a real .xcodeproj was generated
+        shell: bash
+        run: |
+          PROJ=$(find "${{ steps.roves.outputs.bundle-dir }}" -maxdepth 1 -iname '*.xcodeproj' | head -1)
+          if [ -z "$PROJ" ]; then
+            echo "::error::no .xcodeproj found under ${{ steps.roves.outputs.bundle-dir }} -- contents:"
+            find "${{ steps.roves.outputs.bundle-dir }}"
+            exit 1
+          fi
+
+      - name: upload to "test" release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cp "${{ steps.roves.outputs.archive-path }}" roves_action_ios_project.zip
+          for attempt in 1 2 3; do
+            gh release upload "$TEST_RELEASE_TAG" roves_action_ios_project.zip --clobber && exit 0
             echo "upload attempt $attempt failed, retrying in $((attempt * 10))s..." >&2
             sleep $((attempt * 10))
           done

@@ -218,6 +218,19 @@ save-data folder that shouldn't be compressed:
     # default: content-dir's own manifest `theme_color` field, or the normal theme color
     android-theme-color: ''
 
+    # iOS only (requires ios: true below) -- override the staged Xcode project's display
+    # name.
+    #
+    # default: "Roves Game" (support/ios/bundle.py's own default -- unlike android-app-name,
+    # this doesn't read your content's own web manifest yet)
+    ios-app-name: ''
+
+    # iOS only (requires ios: true below) -- override the staged Xcode project's bundle
+    # identifier (e.g. com.example.mygame).
+    #
+    # default: "org.roves.game"
+    ios-bundle-id: ''
+
     # ── `mach build` — plain upstream Servo flags, none of these are Roves-specific ─
     # Every one of these needs advanced-mode: 'true' -- they only control how the engine
     # itself compiles, which only happens in that mode. See "Advanced mode: compiling from
@@ -313,6 +326,20 @@ save-data folder that shouldn't be compressed:
     #
     # default: false
     android: false
+
+    # Package this game as a staged Xcode project ([roves]), via the engine's
+    # support/ios/bundle.py -- there's no `mach bundle --ios`, this doesn't go through mach
+    # at all, unlike android above. XcodeGen then turns the staged project.json into a real
+    # .xcodeproj. Doesn't compile or sign anything -- you still open the result in Xcode
+    # yourself to pick a development team, add icons, and archive/export an .ipa. Needs
+    # advanced-mode: true (for the engine source checkout bundle.py lives in) and a macOS
+    # runner (Xcode/XcodeGen requirement) -- fails clearly on any other runner.os.
+    # icon-png/icon-ico aren't supported together with this yet. Early/experimental -- see
+    # the engine README's platform table, and ios-app-name/ios-bundle-id above for the
+    # bundle-time side of this.
+    #
+    # default: false
+    ios: false
 
     # Build for the default OpenHarmony target ([servo] `--ohos`). Not a supported Roves
     # platform yet.
@@ -552,7 +579,7 @@ Every input that only exists to control *how the engine compiles* is incompatibl
 mode — a prebuilt shell has one fixed build configuration (a `--release` build, the real
 GStreamer media stack, no sanitizers), so `features` (besides `'steam'`, the one published
 variant), `target`, `media-stack`, every sanitizer/debug/`--use-crown`/`--coverage` flag,
-`android`/`ohos`/`win-arm64`, `flavor`, `build-params`, `bin`, and
+`android`/`ios`/`ohos`/`win-arm64`, `flavor`, `build-params`, `bin`, and
 `nightly` all need `advanced-mode: 'true'` (see below) — setting any of them to a non-default
 value in base mode fails the run with a clear error rather than silently ignoring your input.
 Everything else — `content-dir`, `icon-png`/`icon-ico`, and all of `mach bundle`'s own inputs

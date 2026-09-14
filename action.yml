@@ -160,6 +160,35 @@ inputs:
       download, see the engine README's "Supported platforms" table.
     required: false
     default: 'false'
+  ios:
+    description: >-
+      [roves] Package this game as a staged Xcode project instead of a desktop bundle, via
+      the engine's `support/ios/bundle.py` (there's no `mach bundle --ios` — this doesn't go
+      through `mach` at all, unlike `android` above). XcodeGen then turns the staged
+      project.json into a real, ready-to-open .xcodeproj. Doesn't compile or sign anything —
+      the output is an unsigned, unbuilt Xcode project; you still open it yourself to pick a
+      development team, add icons, and archive/export an .ipa, exactly as the engine's own
+      `support/MOBILE.md` documents. Requires `advanced-mode: 'true'` (for the engine source
+      checkout `bundle.py` lives in) and a macOS runner (Xcode/XcodeGen requirement) — fails
+      clearly otherwise rather than silently producing nothing. `icon-png`/`icon-ico` aren't
+      supported with `ios: 'true'` yet (`bundle.py` itself has no icon override). Early/
+      experimental — see the engine README's "Supported platforms" table.
+    required: false
+    default: 'false'
+  ios-app-name:
+    description: >-
+      [roves] `bundle.py --app-name <NAME>`: the staged Xcode project's display name.
+      Requires `ios: 'true'`. Defaults to `support/ios/bundle.py`'s own default, "Roves Game"
+      — unlike `android-app-name`, this doesn't yet fall back to your content's own web
+      manifest (`bundle.py` has no manifest-reading support today).
+    required: false
+    default: ''
+  ios-bundle-id:
+    description: >-
+      [roves] `bundle.py --bundle-id <ID>`: the staged Xcode project's bundle identifier
+      (e.g. com.example.mygame). Requires `ios: 'true'`. Defaults to "org.roves.game".
+    required: false
+    default: ''
   ohos:
     description: '[servo] `--ohos`: build for the default OpenHarmony target. Not currently a supported Roves platform — see the engine README.'
     required: false
@@ -332,6 +361,7 @@ runs:
         check use-crown "${{ inputs.use-crown }}" "'false'" "false"
         check coverage "${{ inputs.coverage }}" "'false'" "false"
         check android "${{ inputs.android }}" "'false'" "false"
+        check ios "${{ inputs.ios }}" "'false'" "false"
         check ohos "${{ inputs.ohos }}" "'false'" "false"
         check win-arm64 "${{ inputs.win-arm64 }}" "'false'" "false"
         check flavor "${{ inputs.flavor }}" "unset" ""
@@ -355,6 +385,34 @@ runs:
         echo "::error::android-app-name/android-orientation/android-theme-color require android: 'true' -- they configure the Android app's launcher label/screen orientation/status bar, which don't exist on a desktop bundle."
         exit 1
 
+    - name: Validate ios-* bundle inputs require ios='true'
+      if: inputs.ios != 'true' && (inputs.ios-app-name != '' || inputs.ios-bundle-id != '')
+      shell: bash
+      run: |
+        echo "::error::ios-app-name/ios-bundle-id require ios: 'true' -- they configure the staged Xcode project's display name/bundle identifier, which don't exist on a desktop bundle."
+        exit 1
+
+    - name: Validate android and ios aren't both set
+      if: inputs.android == 'true' && inputs.ios == 'true'
+      shell: bash
+      run: |
+        echo "::error::android and ios can't both be 'true' in the same run -- each produces a completely different bundle kind (an APK vs. a staged Xcode project). Run this action twice, once per platform, if you need both."
+        exit 1
+
+    - name: Validate ios runs on a macOS runner
+      if: inputs.ios == 'true' && runner.os != 'macOS'
+      shell: bash
+      run: |
+        echo "::error::ios: 'true' requires a macOS runner (got runner.os='${{ runner.os }}') -- XcodeGen and Xcode itself only exist there. Run this leg of your matrix on macos-latest."
+        exit 1
+
+    - name: Validate ios doesn't combine with icon-png/icon-ico (not supported by bundle.py yet)
+      if: inputs.ios == 'true' && (inputs.icon-png != '' || inputs.icon-ico != '')
+      shell: bash
+      run: |
+        echo "::error::icon-png/icon-ico aren't supported with ios: 'true' yet -- the engine's support/ios/bundle.py has no icon-override support today, unlike the Android/desktop paths. Add your icon directly in Xcode after this action stages the project."
+        exit 1
+
     - name: Resolve paths (content-dir/icons are relative to your repo, not the engine checkout)
       id: paths
       shell: bash
@@ -370,12 +428,22 @@ runs:
           echo "icon-ico-abs=$(cd "$(dirname "${{ inputs.icon-ico }}")" && pwd)/$(basename "${{ inputs.icon-ico }}")" >> "$GITHUB_OUTPUT"
         fi
 
+        # ios='true' is the one exception to always pre-creating --output: support/ios/
+        # bundle.py refuses to run if its own --output already exists (it's meant to create
+        # a brand new directory, mirroring its CLI's own documented usage) -- so this only
+        # resolves the absolute path via the *parent* directory here, leaving the leaf itself
+        # for bundle.py's own "iOS bundle" step below to create.
         if [ -n "${{ inputs.output }}" ]; then
-          mkdir -p "${{ inputs.output }}"
-          output_abs="$(cd "${{ inputs.output }}" && pwd)"
+          if [ "${{ inputs.ios }}" = "true" ]; then
+            mkdir -p "$(dirname "${{ inputs.output }}")"
+            output_abs="$(cd "$(dirname "${{ inputs.output }}")" && pwd)/$(basename "${{ inputs.output }}")"
+          else
+            mkdir -p "${{ inputs.output }}"
+            output_abs="$(cd "${{ inputs.output }}" && pwd)"
+          fi
         else
           output_abs="${{ github.workspace }}/roves-bundle-output"
-          mkdir -p "$output_abs"
+          [ "${{ inputs.ios }}" != "true" ] && mkdir -p "$output_abs"
         fi
         echo "output-abs=$output_abs" >> "$GITHUB_OUTPUT"
 
@@ -405,6 +473,11 @@ runs:
     # engine's own CUSTOMIZATIONS.md) -- keep it in sync whenever the pinned roves tag above
     # is bumped to a release vendored from a different Servo version.
     - name: Fetch tests/wpt/tests/tools (mach's command loader needs it to exist)
+      # Skipped for ios='true': the "iOS bundle" step below never invokes `mach` at all
+      # (support/ios/bundle.py is a standalone script -- see its own action.yml input's doc
+      # comment), so this workaround for mach's own command loader is pure wasted network
+      # time in that mode.
+      if: inputs.ios != 'true'
       shell: bash
       working-directory: roves-src
       run: |
@@ -499,7 +572,9 @@ runs:
     # media-stack default here, needs no native media libraries at all). dpkg-dev is required
     # for `mach bundle --deb` but isn't installed by mach bootstrap itself.
     - name: mach bootstrap
-      if: inputs.bootstrap == 'true' && inputs.advanced-mode == 'true'
+      # Skipped for ios='true' for the same reason as the wpt/tools fetch above: nothing in
+      # that mode compiles anything or calls `mach`, so there's nothing to bootstrap.
+      if: inputs.bootstrap == 'true' && inputs.advanced-mode == 'true' && inputs.ios != 'true'
       shell: bash
       working-directory: roves-src
       run: |
@@ -570,7 +645,7 @@ runs:
       # doesn't compile or look for `libservoshell.so` anymore, it packages the game straight
       # from source into a Gradle project. Running `mach build --android` here would just
       # cross-compile a native library nothing in the resulting APK references.
-      if: inputs.advanced-mode == 'true' && inputs.android != 'true'
+      if: inputs.advanced-mode == 'true' && inputs.android != 'true' && inputs.ios != 'true'
       shell: bash
       working-directory: roves-src
       run: |
@@ -610,7 +685,34 @@ runs:
         echo "./mach build ${args[*]} ${{ inputs.build-params }}"
         ./mach build "${args[@]}" ${{ inputs.build-params }}
 
+    - name: Install XcodeGen (ios='true' only)
+      if: inputs.ios == 'true'
+      shell: bash
+      run: brew install xcodegen
+
+    # There's no `mach bundle --ios` (see the `ios` input's own doc comment) -- this is a
+    # completely separate path from the `mach bundle` step below, which this step's own
+    # `if:` (and that step's matching one) keep mutually exclusive. Mirrors the engine
+    # repo's own .github/workflows/ios.yml, minus the final `xcodebuild` -- that workflow
+    # exists to smoke-test the engine's own toolchain end to end; this action hands the
+    # consumer a ready-to-open Xcode project instead, the same "finish it yourself in Xcode"
+    # deliverable support/MOBILE.md documents, so there's no signing identity to fake here.
+    - name: iOS bundle (support/ios/bundle.py + xcodegen generate)
+      if: inputs.ios == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        args=(
+          --content-dir "${{ steps.paths.outputs.content-dir-abs }}"
+          --output "${{ steps.paths.outputs.output-abs }}"
+        )
+        [ -n "${{ inputs.ios-app-name }}" ] && args+=(--app-name "${{ inputs.ios-app-name }}")
+        [ -n "${{ inputs.ios-bundle-id }}" ] && args+=(--bundle-id "${{ inputs.ios-bundle-id }}")
+        python3 "${{ steps.paths.outputs.roves-src-abs }}/support/ios/bundle.py" "${args[@]}"
+        (cd "${{ steps.paths.outputs.output-abs }}" && xcodegen generate --spec project.json)
+
     - name: mach bundle
+      if: inputs.ios != 'true'
       shell: bash
       working-directory: roves-src
       run: |

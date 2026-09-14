@@ -101,7 +101,7 @@ to an explicit, named opt-in for the cases that genuinely need it:
 a hard error, not silently ignored** (`action.yml`'s "Validate base-mode compatibility"
 step, which runs first, before checkout, so an incompatible combination fails fast): `target`,
 `media-stack`, every sanitizer/debug/`--use-crown`/`--coverage` flag,
-`android`/`ohos`/`win-arm64`, `flavor`, `build-params`, `bin`,
+`android`/`ios`/`ohos`/`win-arm64`, `flavor`, `build-params`, `bin`,
 `nightly`, and `features` for anything other than `''`/`'steam'`. These flags exist purely to
 control *how the engine compiles* — meaningless when nothing gets compiled — and a prebuilt
 shell has exactly one fixed build configuration per platform (a `--release` build, the real
@@ -144,6 +144,23 @@ whether it's a build-time flag (add it to the "Validate base-mode compatibility"
 incompatible list) or a bundle-time flag (works in both paths, no validation needed) — don't
 assume; check whether it actually requires the engine to have just been compiled from source,
 the same way every existing entry in that step's list does.
+
+**`ios: 'true'` is a third mode alongside base/advanced, not a `mach build`/`mach bundle` flag
+at all** — there's no `mach bundle --ios` (the engine has no such command), so this input
+doesn't fit the "build-time vs. bundle-time" question the paragraph above asks about new
+`mach` flags. Instead it shells out directly to the engine's own `support/ios/bundle.py` +
+XcodeGen (`Install XcodeGen`/`iOS bundle` steps in `action.yml`), producing a staged,
+unsigned, unbuilt Xcode project — the consumer still finishes it in Xcode themselves (pick a
+team, add icons, archive/export), exactly as the engine's own `support/MOBILE.md` documents.
+Still requires `advanced-mode: 'true'` (for the engine source checkout `bundle.py` lives in,
+same reasoning as `android`) plus a hard `runner.os == 'macOS'` check (Xcode/XcodeGen only
+exist there — unlike `android`, which dropped its own OS restriction once it stopped needing
+Rust cross-compilation). `icon-png`/`icon-ico` are validated as incompatible with `ios: 'true'`
+(a real error, not silently ignored) since `bundle.py` has no icon-override support yet — if
+that gets added engine-side, revisit this restriction. Mirrors the engine repo's own
+`.github/workflows/ios.yml`, minus the final `xcodebuild` step (that workflow smoke-tests the
+engine's own toolchain end to end; this action's job is handing the consumer a project to
+finish, not proving it compiles).
 
 **This inverted the action's original default** (compile-from-source, with the prebuilt path
 as an opt-in called `use-prebuilt-shell`) — base mode is now the default and source

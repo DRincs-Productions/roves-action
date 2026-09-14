@@ -218,18 +218,79 @@ save-data folder that shouldn't be compressed:
     # default: content-dir's own manifest `theme_color` field, or the normal theme color
     android-theme-color: ''
 
-    # iOS only (requires ios: true below) -- override the staged Xcode project's display
-    # name.
+    # Build a real, signed release .apk instead of the default debug one (requires
+    # android: true below, plus all four android-keystore-*/android-key-* inputs below --
+    # fails clearly rather than silently falling back to a debug-signed "release" build).
     #
-    # default: "Roves Game" (support/ios/bundle.py's own default -- unlike android-app-name,
-    # this doesn't read your content's own web manifest yet)
+    # default: false
+    android-release: false
+
+    # Base64-encoded Android release keystore (`base64 -w0 your.keystore`), typically a
+    # GitHub secret. Requires android-release: true above.
+    #
+    # default: unset
+    android-keystore-base64: ''
+
+    # The keystore's store password. Requires android-release: true above.
+    #
+    # default: unset
+    android-keystore-password: ''
+
+    # The signing key's alias inside the keystore. Requires android-release: true above.
+    #
+    # default: unset
+    android-key-alias: ''
+
+    # The signing key's own password. Requires android-release: true above.
+    #
+    # default: unset
+    android-key-password: ''
+
+    # iOS only (requires ios: true below) -- the app's display name.
+    #
+    # default: "Roves Game" (unlike android-app-name, this doesn't read your content's own
+    # web manifest yet)
     ios-app-name: ''
 
-    # iOS only (requires ios: true below) -- override the staged Xcode project's bundle
-    # identifier (e.g. com.example.mygame).
+    # iOS only (requires ios: true below) -- the app's bundle identifier
+    # (e.g. com.example.mygame).
     #
     # default: "org.roves.game"
     ios-bundle-id: ''
+
+    # Archive and export a real, signed .ipa instead of the default unsigned Simulator build
+    # (requires ios: true above, plus ios-certificate-p12-base64/ios-provisioning-profile-
+    # base64/ios-team-id below -- fails clearly rather than silently producing an unsigned
+    # build). Goes through a different mechanism than the default (mach bundle --ios
+    # --ios-release instead of bundle.py + XcodeGen + xcodebuild directly), so you get a
+    # signed .ipa back instead of the raw .xcodeproj.
+    #
+    # default: false
+    ios-release: false
+
+    # Base64-encoded Apple Distribution certificate + private key, exported as a .p12
+    # (`base64 -w0 distribution.p12`), typically a GitHub secret. Must be a real certificate
+    # from your own Apple Developer Program account -- Apple itself must countersign it,
+    # nothing this action or the engine does can produce one. Requires ios-release: true.
+    #
+    # default: unset
+    ios-certificate-p12-base64: ''
+
+    # The .p12's export password. Requires ios-release: true.
+    #
+    # default: unset
+    ios-certificate-p12-password: ''
+
+    # Base64-encoded .mobileprovision matching the certificate above and your app's bundle
+    # ID, from your Apple Developer Program account. Requires ios-release: true.
+    #
+    # default: unset
+    ios-provisioning-profile-base64: ''
+
+    # Your Apple Developer Program Team ID. Requires ios-release: true.
+    #
+    # default: unset
+    ios-team-id: ''
 
     # ── `mach build` — plain upstream Servo flags, none of these are Roves-specific ─
     # Every one of these needs advanced-mode: 'true' -- they only control how the engine
@@ -319,27 +380,27 @@ save-data folder that shouldn't be compressed:
     # the Rust engine at all -- as of the engine's 2026-09-13 mobile pivot to native WebView,
     # this only needs a JDK + the Android SDK's platform/build-tools, no NDK. Still needs
     # advanced-mode: true (an engine source checkout for mach's own Python tooling and the
-    # Android Gradle project), but works on any runner OS now, not just Linux/macOS. Early/
-    # experimental -- debug .apk only, no prebuilt Android shell is published to download —
-    # see the engine README's platform table, and android-app-name/android-orientation/
-    # android-theme-color above for the bundle-time side of this.
+    # Android Gradle project), but works on any runner OS now, not just Linux/macOS. Debug
+    # .apk by default; android-release: true (above) produces a real, signed one instead. No
+    # prebuilt Android shell is published to download — see the engine README's platform
+    # table, and android-app-name/android-orientation/android-theme-color above for the
+    # bundle-time side of this.
     #
     # default: false
     android: false
 
-    # Package this game as a staged Xcode project ([roves]), via the engine's
-    # support/ios/bundle.py -- there's no `mach bundle --ios`, this doesn't go through mach
-    # at all, unlike android above. XcodeGen then turns the staged project.json into a real
-    # .xcodeproj, and it's also built (unsigned) for the iOS Simulator -- both the raw
-    # project and the built .app land in the same output. Unlike Android there's no such
-    # thing as an installable-unsigned build for a real *device* (an Apple platform rule, not
-    # something this action can work around) -- you still open the project in Xcode yourself
-    # to pick a development team, add icons, and archive/export an .ipa; the Simulator build
-    # is only for an immediate look without doing that first. Needs advanced-mode: true (for
-    # the engine source checkout bundle.py lives in) and a macOS runner (Xcode/XcodeGen
-    # requirement) -- fails clearly on any other runner.os. icon-png/icon-ico aren't
-    # supported together with this yet. Early/experimental -- see the engine README's
-    # platform table, and ios-app-name/ios-bundle-id above for the bundle-time side of this.
+    # Package this game as an iOS app ([roves]). By default (ios-release: false, above),
+    # goes through the engine's support/ios/bundle.py + XcodeGen directly -- not `mach
+    # bundle` -- producing both a staged, ready-to-open .xcodeproj (to finish signing
+    # yourself in Xcode: pick a team, add icons, archive/export) and an unsigned iOS
+    # Simulator build for an immediate look, in the same output. Set ios-release: true
+    # (above) to instead go through the engine's `mach bundle --ios --ios-release` and get
+    # back a real, signed .ipa directly -- no raw .xcodeproj in that mode, since there's
+    # nothing left to finish in Xcode. Either way needs advanced-mode: true (for the engine
+    # source checkout both paths need) and a macOS runner (Xcode/XcodeGen requirement) --
+    # fails clearly on any other runner.os. icon-png/icon-ico aren't supported together with
+    # this yet. Early/experimental -- see the engine README's platform table, and
+    # ios-app-name/ios-bundle-id above for the bundle-time side of this.
     #
     # default: false
     ios: false

@@ -160,37 +160,99 @@ inputs:
       download, see the engine README's "Supported platforms" table.
     required: false
     default: 'false'
+  android-release:
+    description: >-
+      [servo] `--android-release`: build a real, signed release .apk instead of the default
+      debug one. Requires `android: 'true'` and all four `android-keystore-*` inputs below —
+      fails clearly rather than silently falling back to a debug-signed "release" build.
+    required: false
+    default: 'false'
+  android-keystore-base64:
+    description: >-
+      [roves] Base64-encoded Android release keystore (e.g. `base64 -w0 your.keystore`),
+      typically stored as a GitHub secret. Decoded to a temporary file and passed to `mach
+      bundle` as `APK_SIGNING_KEY_STORE_PATH`. Requires `android-release: 'true'`.
+    required: false
+    default: ''
+  android-keystore-password:
+    description: '[roves] The keystore''s store password, passed through as `APK_SIGNING_KEY_STORE_PASS`. Requires `android-release: ''true''`.'
+    required: false
+    default: ''
+  android-key-alias:
+    description: '[roves] The signing key''s alias inside the keystore, passed through as `APK_SIGNING_KEY_ALIAS`. Requires `android-release: ''true''`.'
+    required: false
+    default: ''
+  android-key-password:
+    description: '[roves] The signing key''s own password, passed through as `APK_SIGNING_KEY_PASS`. Requires `android-release: ''true''`.'
+    required: false
+    default: ''
   ios:
     description: >-
-      [roves] Package this game as a staged Xcode project instead of a desktop bundle, via
-      the engine's `support/ios/bundle.py` (there's no `mach bundle --ios` — this doesn't go
-      through `mach` at all, unlike `android` above). XcodeGen then turns the staged
-      project.json into a real, ready-to-open .xcodeproj, and it's also built (unsigned) for
-      the iOS Simulator — no Apple signing identity exists here, and unlike Android there's no
-      such thing as an installable-unsigned build for a real device (an Apple platform rule).
-      Both the raw project and the built .app end up in the same output: the Simulator build
-      for an immediate look without touching Xcode, the project for actually signing and
-      shipping to a real device — you still open it yourself in Xcode to pick a development
-      team, add icons, and archive/export an .ipa, exactly as the engine's own
-      `support/MOBILE.md` documents. Requires `advanced-mode: 'true'` (for the engine source
-      checkout `bundle.py` lives in) and a macOS runner (Xcode/XcodeGen requirement) — fails
+      [roves] Package this game as a staged Xcode project instead of a desktop bundle. By
+      default (`ios-release: 'false'`) this still shells out directly to the engine's
+      `support/ios/bundle.py` + XcodeGen, exactly as before, producing both the raw,
+      ready-to-open .xcodeproj (to finish yourself in Xcode — pick a team, add icons,
+      archive/export) and an unsigned iOS Simulator build for an immediate look without
+      touching Xcode. Set `ios-release: 'true'` (plus the `ios-certificate-*`/
+      `ios-provisioning-profile-*`/`ios-team-id` inputs below) to instead go through the
+      engine's `mach bundle --ios --ios-release` and get back a real, signed .ipa — see that
+      input's own description. Requires `advanced-mode: 'true'` (for the engine source
+      checkout both paths need) and a macOS runner (Xcode/XcodeGen requirement) — fails
       clearly otherwise rather than silently producing nothing. `icon-png`/`icon-ico` aren't
-      supported with `ios: 'true'` yet (`bundle.py` itself has no icon override). Early/
+      supported with `ios: 'true'` yet (neither path has icon-override support). Early/
       experimental — see the engine README's "Supported platforms" table.
     required: false
     default: 'false'
   ios-app-name:
     description: >-
-      [roves] `bundle.py --app-name <NAME>`: the staged Xcode project's display name.
-      Requires `ios: 'true'`. Defaults to `support/ios/bundle.py`'s own default, "Roves Game"
-      — unlike `android-app-name`, this doesn't yet fall back to your content's own web
-      manifest (`bundle.py` has no manifest-reading support today).
+      [roves] The app's display name — `bundle.py --app-name <NAME>` (unsigned path) or
+      `mach bundle --ios-app-name <NAME>` (`ios-release: 'true'`). Requires `ios: 'true'`.
+      Defaults to "Roves Game" — unlike `android-app-name`, this doesn't yet fall back to
+      your content's own web manifest.
     required: false
     default: ''
   ios-bundle-id:
     description: >-
-      [roves] `bundle.py --bundle-id <ID>`: the staged Xcode project's bundle identifier
-      (e.g. com.example.mygame). Requires `ios: 'true'`. Defaults to "org.roves.game".
+      [roves] The app's bundle identifier (e.g. com.example.mygame) — `bundle.py --bundle-id`
+      (unsigned path) or `mach bundle --ios-bundle-id` (`ios-release: 'true'`). Requires
+      `ios: 'true'`. Defaults to "org.roves.game".
+    required: false
+    default: ''
+  ios-release:
+    description: >-
+      [servo] `--ios-release`: archive and export a real, signed .ipa instead of the default
+      unsigned Simulator build — goes through `mach bundle --ios --ios-release` instead of the
+      standalone `bundle.py`/XcodeGen/xcodebuild path `ios: 'true'` otherwise uses (see that
+      input's own description), so you no longer get the raw .xcodeproj back, just the signed
+      .ipa. Requires `ios: 'true'` and all four `ios-certificate-*`/`ios-provisioning-profile-*`/
+      `ios-team-id` inputs below — fails clearly rather than silently producing an unsigned
+      build.
+    required: false
+    default: 'false'
+  ios-certificate-p12-base64:
+    description: >-
+      [roves] Base64-encoded Apple Distribution certificate + private key, exported as a
+      .p12 (e.g. `base64 -w0 distribution.p12`), typically stored as a GitHub secret. Decoded
+      to a temporary file and passed to `mach bundle` as `IOS_SIGNING_CERTIFICATE_P12_PATH`.
+      This must be a real certificate from your own Apple Developer Program account — Apple
+      itself must countersign it, nothing this action or the engine does can produce one.
+      Requires `ios-release: 'true'`.
+    required: false
+    default: ''
+  ios-certificate-p12-password:
+    description: '[roves] The .p12''s export password, passed through as `IOS_SIGNING_CERTIFICATE_P12_PASSWORD`. Requires `ios-release: ''true''`.'
+    required: false
+    default: ''
+  ios-provisioning-profile-base64:
+    description: >-
+      [roves] Base64-encoded `.mobileprovision` matching the certificate above and your app's
+      bundle ID, downloaded from your Apple Developer Program account. Decoded to a temporary
+      file and passed to `mach bundle` as `IOS_SIGNING_PROVISIONING_PROFILE_PATH`. Requires
+      `ios-release: 'true'`.
+    required: false
+    default: ''
+  ios-team-id:
+    description: '[roves] Your Apple Developer Program Team ID, passed through as `IOS_SIGNING_TEAM_ID`. Requires `ios-release: ''true''`.'
     required: false
     default: ''
   ohos:
@@ -396,6 +458,20 @@ runs:
         echo "::error::ios-app-name/ios-bundle-id require ios: 'true' -- they configure the staged Xcode project's display name/bundle identifier, which don't exist on a desktop bundle."
         exit 1
 
+    - name: Validate android-release requires android='true' and all 4 keystore inputs
+      if: inputs.android-release == 'true' && (inputs.android != 'true' || inputs.android-keystore-base64 == '' || inputs.android-keystore-password == '' || inputs.android-key-alias == '' || inputs.android-key-password == '')
+      shell: bash
+      run: |
+        echo "::error::android-release: 'true' requires android: 'true' plus all four android-keystore-base64/android-keystore-password/android-key-alias/android-key-password inputs -- without a real signing identity there's no way to produce a signed release .apk, and this fails loudly rather than silently falling back to a debug-signed one."
+        exit 1
+
+    - name: Validate ios-release requires ios='true' and all 4 signing inputs
+      if: inputs.ios-release == 'true' && (inputs.ios != 'true' || inputs.ios-certificate-p12-base64 == '' || inputs.ios-provisioning-profile-base64 == '' || inputs.ios-team-id == '')
+      shell: bash
+      run: |
+        echo "::error::ios-release: 'true' requires ios: 'true' plus ios-certificate-p12-base64, ios-provisioning-profile-base64 and ios-team-id (ios-certificate-p12-password too, unless your .p12 genuinely has no password) -- without a real Apple Distribution identity there's no way to produce a signed .ipa."
+        exit 1
+
     - name: Validate android and ios aren't both set
       if: inputs.android == 'true' && inputs.ios == 'true'
       shell: bash
@@ -477,11 +553,13 @@ runs:
     # engine's own CUSTOMIZATIONS.md) -- keep it in sync whenever the pinned roves tag above
     # is bumped to a release vendored from a different Servo version.
     - name: Fetch tests/wpt/tests/tools (mach's command loader needs it to exist)
-      # Skipped for ios='true': the "iOS bundle" step below never invokes `mach` at all
-      # (support/ios/bundle.py is a standalone script -- see its own action.yml input's doc
-      # comment), so this workaround for mach's own command loader is pure wasted network
-      # time in that mode.
-      if: inputs.ios != 'true'
+      # Skipped for ios='true' EXCEPT when ios-release='true': the default unsigned iOS path
+      # (the "iOS bundle" step below) never invokes `mach` at all (support/ios/bundle.py is a
+      # standalone script -- see its own action.yml input's doc comment), so this workaround
+      # for mach's own command loader would be pure wasted network time there. ios-release
+      # goes through `mach bundle --ios --ios-release` instead (see that step below), which
+      # needs this exactly like every other `mach` invocation does.
+      if: inputs.ios != 'true' || inputs.ios-release == 'true'
       shell: bash
       working-directory: roves-src
       run: |
@@ -576,8 +654,11 @@ runs:
     # media-stack default here, needs no native media libraries at all). dpkg-dev is required
     # for `mach bundle --deb` but isn't installed by mach bootstrap itself.
     - name: mach bootstrap
-      # Skipped for ios='true' for the same reason as the wpt/tools fetch above: nothing in
-      # that mode compiles anything or calls `mach`, so there's nothing to bootstrap.
+      # Skipped for ios='true' unconditionally, including ios-release='true': `mach bundle
+      # --ios[--ios-release]` never compiles anything (no NDK/GStreamer/Rust involved, just
+      # XcodeGen + xcodebuild) -- there's nothing for bootstrap to install either way, unlike
+      # the wpt/tools fetch above, which mach's command loader needs regardless of whether
+      # anything actually gets compiled.
       if: inputs.bootstrap == 'true' && inputs.advanced-mode == 'true' && inputs.ios != 'true'
       shell: bash
       working-directory: roves-src
@@ -694,12 +775,14 @@ runs:
       shell: bash
       run: brew install xcodegen
 
-    # There's no `mach bundle --ios` (see the `ios` input's own doc comment) -- this is a
-    # completely separate path from the `mach bundle` step below, which this step's own
-    # `if:` (and that step's matching one) keep mutually exclusive. Mirrors the engine
-    # repo's own .github/workflows/ios.yml's staging steps.
+    # The default (ios-release != 'true') unsigned path -- a completely separate mechanism
+    # from `mach bundle --ios --ios-release` below (mirrors the engine repo's own
+    # .github/workflows/ios.yml's pre-2026-09-14 staging steps), kept for its own sake: it's
+    # what still gives you the raw, ready-to-open .xcodeproj to finish signing yourself in
+    # Xcode. Skipped when ios-release='true' since that path produces a signed .ipa directly
+    # and doesn't need this at all.
     - name: iOS bundle (support/ios/bundle.py + xcodegen generate)
-      if: inputs.ios == 'true'
+      if: inputs.ios == 'true' && inputs.ios-release != 'true'
       shell: bash
       run: |
         set -euo pipefail
@@ -722,7 +805,7 @@ runs:
     # output, so one zip gives a consumer both: something to drag straight into Simulator for
     # a quick look, and the real source to open in Xcode and actually sign for a device.
     - name: iOS Simulator build (unsigned, for a quick look without touching Xcode)
-      if: inputs.ios == 'true'
+      if: inputs.ios == 'true' && inputs.ios-release != 'true'
       shell: bash
       run: |
         set -euo pipefail
@@ -740,6 +823,40 @@ runs:
         fi
         cp -r "$APP_PATH" "${{ steps.paths.outputs.output-abs }}/$(basename "$APP_PATH")"
         rm -rf "$BUILD_DIR"
+
+    # ios-release='true' path: a real, signed .ipa via the engine's own `mach bundle --ios
+    # --ios-release` (added 2026-09-14, see the engine repo's own CUSTOMIZATIONS.md) instead
+    # of the unsigned bundle.py/xcodegen/xcodebuild steps above -- those are skipped entirely
+    # in this mode (see their own `if:`). Certificate/profile secrets are decoded to temp
+    # files here rather than passed as raw base64 to `mach bundle` itself, mirroring the
+    # Android keystore handling below.
+    - name: mach bundle --ios --ios-release (decode signing secrets + invoke)
+      if: inputs.ios == 'true' && inputs.ios-release == 'true'
+      shell: bash
+      working-directory: roves-src
+      run: |
+        set -euo pipefail
+        cert_path="$RUNNER_TEMP/roves-ios-certificate.p12"
+        profile_path="$RUNNER_TEMP/roves-ios-profile.mobileprovision"
+        echo "${{ inputs.ios-certificate-p12-base64 }}" | base64 --decode > "$cert_path"
+        echo "${{ inputs.ios-provisioning-profile-base64 }}" | base64 --decode > "$profile_path"
+
+        args=(
+          --ios --ios-release
+          --content-dir "${{ steps.paths.outputs.content-dir-abs }}"
+          --output "${{ steps.paths.outputs.output-abs }}"
+        )
+        [ -n "${{ inputs.ios-app-name }}" ] && args+=(--ios-app-name "${{ inputs.ios-app-name }}")
+        [ -n "${{ inputs.ios-bundle-id }}" ] && args+=(--ios-bundle-id "${{ inputs.ios-bundle-id }}")
+
+        export IOS_SIGNING_CERTIFICATE_P12_PATH="$cert_path"
+        export IOS_SIGNING_CERTIFICATE_P12_PASSWORD="${{ inputs.ios-certificate-p12-password }}"
+        export IOS_SIGNING_PROVISIONING_PROFILE_PATH="$profile_path"
+        export IOS_SIGNING_TEAM_ID="${{ inputs.ios-team-id }}"
+
+        echo "./mach bundle ${args[*]}"
+        ./mach bundle "${args[@]}"
+        rm -f "$cert_path" "$profile_path"
 
     - name: mach bundle
       if: inputs.ios != 'true'
@@ -813,8 +930,24 @@ runs:
         [ -n "${{ inputs.android-orientation }}" ] && args+=(--android-orientation "${{ inputs.android-orientation }}")
         [ -n "${{ inputs.android-theme-color }}" ] && args+=(--android-theme-color "${{ inputs.android-theme-color }}")
 
+        # android-release='true': decode the keystore secret to a temp file and export the
+        # same 4 env vars support/android/apk/buildSrc/src/main/kotlin/Android.kt's
+        # getSigningKeyInfo already reads (upstream, unmodified -- see the engine's own
+        # CUSTOMIZATIONS.md), then add --android-release. Nothing to do here if it's 'false'
+        # (the default) -- --android-release simply isn't added.
+        if [ "${{ inputs.android-release }}" = "true" ]; then
+          keystore_path="$RUNNER_TEMP/roves-android-release.keystore"
+          echo "${{ inputs.android-keystore-base64 }}" | base64 --decode > "$keystore_path"
+          export APK_SIGNING_KEY_STORE_PATH="$keystore_path"
+          export APK_SIGNING_KEY_STORE_PASS="${{ inputs.android-keystore-password }}"
+          export APK_SIGNING_KEY_ALIAS="${{ inputs.android-key-alias }}"
+          export APK_SIGNING_KEY_PASS="${{ inputs.android-key-password }}"
+          args+=(--android-release)
+        fi
+
         echo "./mach bundle ${args[*]} ${{ inputs.bundle-params }}"
         ./mach bundle "${args[@]}" ${{ inputs.bundle-params }}
+        [ "${{ inputs.android-release }}" = "true" ] && rm -f "$RUNNER_TEMP/roves-android-release.keystore"
 
     # Renamed to a named subfolder before zipping, rather than zipping the output directory's
     # contents directly at the archive root — otherwise extracting dumps play.exe/play plus a

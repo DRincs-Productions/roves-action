@@ -145,31 +145,47 @@ incompatible list) or a bundle-time flag (works in both paths, no validation nee
 assume; check whether it actually requires the engine to have just been compiled from source,
 the same way every existing entry in that step's list does.
 
-**`ios: 'true'` is a third mode alongside base/advanced, not a `mach build`/`mach bundle` flag
-at all** — there's no `mach bundle --ios` (the engine has no such command), so this input
-doesn't fit the "build-time vs. bundle-time" question the paragraph above asks about new
-`mach` flags. Instead it shells out directly to the engine's own `support/ios/bundle.py` +
+**`ios: 'true'` was originally a third mode alongside base/advanced, entirely outside the
+`mach build`/`mach bundle` flag system** — until 2026-09-14, there was no `mach bundle --ios`
+at all, so this input shelled out directly to the engine's own `support/ios/bundle.py` +
 XcodeGen (`Install XcodeGen`/`iOS bundle` steps in `action.yml`), producing a staged,
-unsigned Xcode project — the consumer still finishes it in Xcode themselves (pick a team, add
-icons, archive/export an .ipa), exactly as the engine's own `support/MOBILE.md` documents.
-Still requires `advanced-mode: 'true'` (for the engine source checkout `bundle.py` lives in,
-same reasoning as `android`) plus a hard `runner.os == 'macOS'` check (Xcode/XcodeGen only
-exist there — unlike `android`, which dropped its own OS restriction once it stopped needing
-Rust cross-compilation). `icon-png`/`icon-ico` are validated as incompatible with `ios: 'true'`
-(a real error, not silently ignored) since `bundle.py` has no icon-override support yet — if
-that gets added engine-side, revisit this restriction.
+unsigned Xcode project — the consumer finished it in Xcode themselves (pick a team, add
+icons, archive/export an .ipa). **The engine gained `mach bundle --ios`/`--ios-release`
+that same day** (see the engine repo's own CUSTOMIZATIONS.md) — rather than replace the
+existing (working, zero-regression-risk) unsigned path outright, this repo added `ios-release:
+'true'` as a second, additive mode: `ios-release: 'false'` (the default) still behaves exactly
+as described above (raw `.xcodeproj` + unsigned Simulator `.app`, no `mach` involvement);
+`ios-release: 'true'` instead goes through `mach bundle --ios --ios-release` (decoding
+`ios-certificate-p12-base64`/`ios-provisioning-profile-base64` secrets to temp files first,
+same shape as `android-release`'s keystore handling below) and gets back a real, signed `.ipa`
+— no raw project in that mode, since `mach bundle --ios` stages into its own scratch directory,
+not this action's output. Both modes still require `advanced-mode: 'true'` (for the engine
+source checkout either path needs) plus a hard `runner.os == 'macOS'` check (Xcode/XcodeGen
+only exist there — unlike `android`, which dropped its own OS restriction once it stopped
+needing Rust cross-compilation). `icon-png`/`icon-ico` stay incompatible with `ios: 'true'`
+(a real error, not silently ignored) — neither iOS path has icon-override support yet.
 
-**Also built, unsigned, for the iOS Simulator** (`iOS Simulator build` step) — unlike Android,
-there's no such thing as an installable-unsigned build for a real *device* at all (an Apple
-platform rule this action can't work around; Simulator specifically needs no signing
-identity, which is why this is possible without one). Built into a scratch `mktemp -d`
-`-derivedDataPath`, not directly inside the staged project, so only the final `.app` gets
-copied in afterward — copying the whole DerivedData tree into the zip would bloat it with
-intermediate object files/module caches nobody asked for. Both land in the same output
-(`bundle-dir`/`archive-path`), so one zip gives a consumer the Simulator build for an
+**Also built, unsigned, for the iOS Simulator** (`iOS Simulator build` step, `ios-release:
+'false'` only) — unlike Android, there's no such thing as an installable-unsigned build for a
+real *device* at all (an Apple platform rule this action can't work around; Simulator
+specifically needs no signing identity, which is why this is possible without one). Built into
+a scratch `mktemp -d` `-derivedDataPath`, not directly inside the staged project, so only the
+final `.app` gets copied in afterward — copying the whole DerivedData tree into the zip would
+bloat it with intermediate object files/module caches nobody asked for. Both land in the same
+output (`bundle-dir`/`archive-path`), so one zip gives a consumer the Simulator build for an
 immediate look and the real project to actually sign for a device — no new output was added
 for this, unlike `build-android`'s separate `locate built APK` step, since Android's
 `bundle-dir` only ever contained the single `.apk` that mattered.
+
+**Android and iOS release signing are NOT symmetric, despite looking almost identical** (both
+"decode a base64 secret to a temp file, export env vars, add a `--*-release` flag") — an
+Android keystore is self-signed by design, so `android-keystore-base64` can be a real,
+complete, self-generated signing identity. An Apple Distribution certificate must be
+countersigned by Apple itself (an actual Apple Developer Program account, out of this
+action's or the engine's control) — `ios-certificate-p12-base64`/`ios-provisioning-profile-
+base64` always trace back to a human with access to that account; neither this action, the
+engine, nor CI can manufacture a real one end-to-end. Keep this distinction in mind before
+"simplifying" the two to look more alike — the asymmetry is real, not accidental.
 
 **This inverted the action's original default** (compile-from-source, with the prebuilt path
 as an opt-in called `use-prebuilt-shell`) — base mode is now the default and source

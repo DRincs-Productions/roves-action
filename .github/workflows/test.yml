@@ -261,17 +261,23 @@ jobs:
           artifact-name: pixi-vn-react-template_ios
 
       # Unlike build-android's single .apk file, the deliverable here is the whole staged
-      # Xcode project directory (App.swift/www/roves-brand/Info.plist/project.json plus the
-      # XcodeGen-generated .xcodeproj) -- there's no single file that "is" the output the way
-      # an .apk is, so this uploads the archive-path zip this action already produced (same
-      # as the base-mode jobs above), just under a clean, stable name instead of one that
-      # varies by matrix entry.
-      - name: verify a real .xcodeproj was generated
+      # output directory (App.swift/www/roves-brand/Info.plist/project.json, the
+      # XcodeGen-generated .xcodeproj, and the built Simulator .app) -- there's no single
+      # file that "is" the output the way an .apk is, so this uploads the archive-path zip
+      # this action already produced (same as the base-mode jobs above), just under a clean,
+      # stable name instead of one that varies by matrix entry.
+      - name: verify a real .xcodeproj and a built .app were both generated
         shell: bash
         run: |
           PROJ=$(find "${{ steps.roves.outputs.bundle-dir }}" -maxdepth 1 -iname '*.xcodeproj' | head -1)
           if [ -z "$PROJ" ]; then
             echo "::error::no .xcodeproj found under ${{ steps.roves.outputs.bundle-dir }} -- contents:"
+            find "${{ steps.roves.outputs.bundle-dir }}"
+            exit 1
+          fi
+          APP=$(find "${{ steps.roves.outputs.bundle-dir }}" -maxdepth 1 -iname '*.app' | head -1)
+          if [ -z "$APP" ]; then
+            echo "::error::no built .app found under ${{ steps.roves.outputs.bundle-dir }} -- contents:"
             find "${{ steps.roves.outputs.bundle-dir }}"
             exit 1
           fi

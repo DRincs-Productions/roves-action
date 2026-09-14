@@ -330,13 +330,16 @@ save-data folder that shouldn't be compressed:
     # Package this game as a staged Xcode project ([roves]), via the engine's
     # support/ios/bundle.py -- there's no `mach bundle --ios`, this doesn't go through mach
     # at all, unlike android above. XcodeGen then turns the staged project.json into a real
-    # .xcodeproj. Doesn't compile or sign anything -- you still open the result in Xcode
-    # yourself to pick a development team, add icons, and archive/export an .ipa. Needs
-    # advanced-mode: true (for the engine source checkout bundle.py lives in) and a macOS
-    # runner (Xcode/XcodeGen requirement) -- fails clearly on any other runner.os.
-    # icon-png/icon-ico aren't supported together with this yet. Early/experimental -- see
-    # the engine README's platform table, and ios-app-name/ios-bundle-id above for the
-    # bundle-time side of this.
+    # .xcodeproj, and it's also built (unsigned) for the iOS Simulator -- both the raw
+    # project and the built .app land in the same output. Unlike Android there's no such
+    # thing as an installable-unsigned build for a real *device* (an Apple platform rule, not
+    # something this action can work around) -- you still open the project in Xcode yourself
+    # to pick a development team, add icons, and archive/export an .ipa; the Simulator build
+    # is only for an immediate look without doing that first. Needs advanced-mode: true (for
+    # the engine source checkout bundle.py lives in) and a macOS runner (Xcode/XcodeGen
+    # requirement) -- fails clearly on any other runner.os. icon-png/icon-ico aren't
+    # supported together with this yet. Early/experimental -- see the engine README's
+    # platform table, and ios-app-name/ios-bundle-id above for the bundle-time side of this.
     #
     # default: false
     ios: false

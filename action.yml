@@ -165,9 +165,13 @@ inputs:
       [roves] Package this game as a staged Xcode project instead of a desktop bundle, via
       the engine's `support/ios/bundle.py` (there's no `mach bundle --ios` — this doesn't go
       through `mach` at all, unlike `android` above). XcodeGen then turns the staged
-      project.json into a real, ready-to-open .xcodeproj. Doesn't compile or sign anything —
-      the output is an unsigned, unbuilt Xcode project; you still open it yourself to pick a
-      development team, add icons, and archive/export an .ipa, exactly as the engine's own
+      project.json into a real, ready-to-open .xcodeproj, and it's also built (unsigned) for
+      the iOS Simulator — no Apple signing identity exists here, and unlike Android there's no
+      such thing as an installable-unsigned build for a real device (an Apple platform rule).
+      Both the raw project and the built .app end up in the same output: the Simulator build
+      for an immediate look without touching Xcode, the project for actually signing and
+      shipping to a real device — you still open it yourself in Xcode to pick a development
+      team, add icons, and archive/export an .ipa, exactly as the engine's own
       `support/MOBILE.md` documents. Requires `advanced-mode: 'true'` (for the engine source
       checkout `bundle.py` lives in) and a macOS runner (Xcode/XcodeGen requirement) — fails
       clearly otherwise rather than silently producing nothing. `icon-png`/`icon-ico` aren't
@@ -693,10 +697,7 @@ runs:
     # There's no `mach bundle --ios` (see the `ios` input's own doc comment) -- this is a
     # completely separate path from the `mach bundle` step below, which this step's own
     # `if:` (and that step's matching one) keep mutually exclusive. Mirrors the engine
-    # repo's own .github/workflows/ios.yml, minus the final `xcodebuild` -- that workflow
-    # exists to smoke-test the engine's own toolchain end to end; this action hands the
-    # consumer a ready-to-open Xcode project instead, the same "finish it yourself in Xcode"
-    # deliverable support/MOBILE.md documents, so there's no signing identity to fake here.
+    # repo's own .github/workflows/ios.yml's staging steps.
     - name: iOS bundle (support/ios/bundle.py + xcodegen generate)
       if: inputs.ios == 'true'
       shell: bash
@@ -710,6 +711,35 @@ runs:
         [ -n "${{ inputs.ios-bundle-id }}" ] && args+=(--bundle-id "${{ inputs.ios-bundle-id }}")
         python3 "${{ steps.paths.outputs.roves-src-abs }}/support/ios/bundle.py" "${args[@]}"
         (cd "${{ steps.paths.outputs.output-abs }}" && xcodegen generate --spec project.json)
+
+    # Unsigned, Simulator-only -- no Apple signing identity exists here, and a real device
+    # needs one no matter what (unlike Android, there's no such thing as an installable
+    # unsigned iOS build; that's an Apple platform rule, not something this action could work
+    # around). Built into a scratch derivedDataPath *outside* output-abs, then only the final
+    # .app is copied in -- copying the whole DerivedData tree in would bloat the zip with
+    # intermediate object files/module caches nobody asked for. Placed alongside the raw
+    # project (App.swift/www/project.json/the .xcodeproj XcodeGen just generated) in the same
+    # output, so one zip gives a consumer both: something to drag straight into Simulator for
+    # a quick look, and the real source to open in Xcode and actually sign for a device.
+    - name: iOS Simulator build (unsigned, for a quick look without touching Xcode)
+      if: inputs.ios == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        BUILD_DIR="$(mktemp -d)"
+        (cd "${{ steps.paths.outputs.output-abs }}" && \
+          xcodebuild -project RovesGame.xcodeproj -scheme RovesGame \
+            -configuration Debug -sdk iphonesimulator -derivedDataPath "$BUILD_DIR" \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            build)
+        APP_PATH=$(find "$BUILD_DIR/Build/Products" -maxdepth 2 -iname '*.app' | head -1)
+        if [ -z "$APP_PATH" ]; then
+          echo "::error::no .app found under $BUILD_DIR/Build/Products after the Simulator build -- contents:"
+          find "$BUILD_DIR/Build/Products"
+          exit 1
+        fi
+        cp -r "$APP_PATH" "${{ steps.paths.outputs.output-abs }}/$(basename "$APP_PATH")"
+        rm -rf "$BUILD_DIR"
 
     - name: mach bundle
       if: inputs.ios != 'true'

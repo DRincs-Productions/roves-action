@@ -150,17 +150,26 @@ at all** — there's no `mach bundle --ios` (the engine has no such command), so
 doesn't fit the "build-time vs. bundle-time" question the paragraph above asks about new
 `mach` flags. Instead it shells out directly to the engine's own `support/ios/bundle.py` +
 XcodeGen (`Install XcodeGen`/`iOS bundle` steps in `action.yml`), producing a staged,
-unsigned, unbuilt Xcode project — the consumer still finishes it in Xcode themselves (pick a
-team, add icons, archive/export), exactly as the engine's own `support/MOBILE.md` documents.
+unsigned Xcode project — the consumer still finishes it in Xcode themselves (pick a team, add
+icons, archive/export an .ipa), exactly as the engine's own `support/MOBILE.md` documents.
 Still requires `advanced-mode: 'true'` (for the engine source checkout `bundle.py` lives in,
 same reasoning as `android`) plus a hard `runner.os == 'macOS'` check (Xcode/XcodeGen only
 exist there — unlike `android`, which dropped its own OS restriction once it stopped needing
 Rust cross-compilation). `icon-png`/`icon-ico` are validated as incompatible with `ios: 'true'`
 (a real error, not silently ignored) since `bundle.py` has no icon-override support yet — if
-that gets added engine-side, revisit this restriction. Mirrors the engine repo's own
-`.github/workflows/ios.yml`, minus the final `xcodebuild` step (that workflow smoke-tests the
-engine's own toolchain end to end; this action's job is handing the consumer a project to
-finish, not proving it compiles).
+that gets added engine-side, revisit this restriction.
+
+**Also built, unsigned, for the iOS Simulator** (`iOS Simulator build` step) — unlike Android,
+there's no such thing as an installable-unsigned build for a real *device* at all (an Apple
+platform rule this action can't work around; Simulator specifically needs no signing
+identity, which is why this is possible without one). Built into a scratch `mktemp -d`
+`-derivedDataPath`, not directly inside the staged project, so only the final `.app` gets
+copied in afterward — copying the whole DerivedData tree into the zip would bloat it with
+intermediate object files/module caches nobody asked for. Both land in the same output
+(`bundle-dir`/`archive-path`), so one zip gives a consumer the Simulator build for an
+immediate look and the real project to actually sign for a device — no new output was added
+for this, unlike `build-android`'s separate `locate built APK` step, since Android's
+`bundle-dir` only ever contained the single `.apk` that mattered.
 
 **This inverted the action's original default** (compile-from-source, with the prebuilt path
 as an opt-in called `use-prebuilt-shell`) — base mode is now the default and source

@@ -1,9 +1,9 @@
-name: 'Test this action against a real game (pixi-vn-react-template)'
+name: 'Test this action against a real game (visual-novel-template)'
 
 # End-to-end smoke test for *this action itself* (action.yml), not for the Roves engine --
 # that's already covered by DRincs-Productions/roves's own .github/workflows/test.yml, which
 # this workflow otherwise mirrors (rolling "test" release, ensure-then-upload idiom, retries
-# on upload). Builds DRincs-Productions/pixi-vn-react-template's actual web content (a real
+# on upload). Builds DRincs-Productions/visual-novel-template's actual web content (a real
 # Pixi'VN + React + Vite game template, not a synthetic fixture) and runs it through this
 # repo's own action.yml via `uses: ./` -- i.e. whatever is currently pushed to this repo, not
 # the published DRincs-Productions/roves-action@v0 tag -- across every platform/feature
@@ -34,7 +34,7 @@ on:
 
 env:
   TEST_RELEASE_TAG: 'test'
-  TEMPLATE_REPO: 'DRincs-Productions/pixi-vn-react-template'
+  TEMPLATE_REPO: 'DRincs-Productions/visual-novel-template'
 
 jobs:
   # ── Create the rolling "test" release exactly once before the matrix starts ────
@@ -98,7 +98,7 @@ jobs:
       - name: checkout this action
         uses: actions/checkout@v4
 
-      - name: checkout pixi-vn-react-template
+      - name: checkout visual-novel-template
         uses: actions/checkout@v4
         with:
           repository: ${{ env.TEMPLATE_REPO }}
@@ -122,7 +122,7 @@ jobs:
         with:
           content-dir: template/dist
           features: ${{ matrix.features }}
-          artifact-name: pixi-vn-react-template_${{ matrix.os_name }}${{ matrix.suffix }}
+          artifact-name: visual-novel-template_${{ matrix.os_name }}${{ matrix.suffix }}
 
       # Retries: every matrix job uploads to the same "test" release concurrently, and
       # `gh release upload --clobber` (delete-then-reupload) occasionally hits a transient
@@ -151,7 +151,7 @@ jobs:
       - name: checkout this action
         uses: actions/checkout@v4
 
-      - name: checkout pixi-vn-react-template
+      - name: checkout visual-novel-template
         uses: actions/checkout@v4
         with:
           repository: ${{ env.TEMPLATE_REPO }}
@@ -225,7 +225,7 @@ jobs:
           android-keystore-password: ${{ env.KEYSTORE_PASS }}
           android-key-alias: roves-action-ci
           android-key-password: ${{ env.KEYSTORE_PASS }}
-          artifact-name: pixi-vn-react-template_android
+          artifact-name: visual-novel-template_android
 
       # Unlike the base-mode jobs above, uploads the raw .apk under a clean, stable name
       # instead of the zip `archive-path` output -- an .apk is already the single file that
@@ -274,7 +274,7 @@ jobs:
       - name: checkout this action
         uses: actions/checkout@v4
 
-      - name: checkout pixi-vn-react-template
+      - name: checkout visual-novel-template
         uses: actions/checkout@v4
         with:
           repository: ${{ env.TEMPLATE_REPO }}
@@ -299,7 +299,7 @@ jobs:
           content-dir: template/dist
           advanced-mode: 'true'
           ios: 'true'
-          artifact-name: pixi-vn-react-template_ios
+          artifact-name: visual-novel-template_ios
 
       # Unlike build-android's single .apk file, the deliverable here is the whole staged
       # output directory (App.swift/www/roves-brand/Info.plist/project.json, the

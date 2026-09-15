@@ -183,13 +183,48 @@ jobs:
           done
           echo "::warning::dpkg/apt lock still held after 60s -- proceeding anyway"
 
-      - name: build & bundle with this action (advanced mode, android)
+      # Exercises the action's own android-release/android-keystore-* inputs end to end, not
+      # just the default debug .apk path -- mirrors the engine repo's own android-release-signing
+      # smoke job (see its CUSTOMIZATIONS.md entry): this keystore only ever proves the signing
+      # *mechanism* works through this action, it's never reused for an actual game release, so
+      # generating it fresh here (instead of a stored secret) avoids that whole class of "did the
+      # secret(s) stay in sync" problem from the start.
+      - name: setup java (for keytool, to generate a fresh release keystore)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: generate a fresh release keystore
+        id: keystore
+        shell: bash
+        run: |
+          pass=$(uuidgen)
+          echo "::add-mask::$pass"
+          echo "KEYSTORE_PASS=$pass" >> "$GITHUB_ENV"
+          keytool -genkeypair -v -keystore "$RUNNER_TEMP/roves-action-ci.keystore" \
+            -storepass "$pass" -keypass "$pass" -alias roves-action-ci \
+            -keyalg RSA -keysize 2048 -validity 1 \
+            -dname "CN=Roves Action CI, OU=CI, O=Roves, C=US"
+          {
+            echo "base64<<KEYSTORE_B64_EOF"
+            base64 -w0 "$RUNNER_TEMP/roves-action-ci.keystore"
+            echo
+            echo "KEYSTORE_B64_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: build & bundle with this action (advanced mode, android, real release signing)
         id: roves
         uses: ./
         with:
           content-dir: template/dist
           advanced-mode: 'true'
           android: 'true'
+          android-release: 'true'
+          android-keystore-base64: ${{ steps.keystore.outputs.base64 }}
+          android-keystore-password: ${{ env.KEYSTORE_PASS }}
+          android-key-alias: roves-action-ci
+          android-key-password: ${{ env.KEYSTORE_PASS }}
           artifact-name: pixi-vn-react-template_android
 
       # Unlike the base-mode jobs above, uploads the raw .apk under a clean, stable name
@@ -209,15 +244,21 @@ jobs:
           fi
           echo "path=$APK" >> "$GITHUB_OUTPUT"
 
+      - name: apksigner verify (confirms this is a genuinely signed release APK, not debug-signed)
+        shell: bash
+        run: |
+          apksigner="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -name apksigner | sort -V | tail -1)"
+          "$apksigner" verify --print-certs "${{ steps.apk.outputs.path }}"
+
       - name: upload to "test" release
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
-          cp "${{ steps.apk.outputs.path }}" roves_action_android_debug.apk
+          cp "${{ steps.apk.outputs.path }}" roves_action_android_release.apk
           for attempt in 1 2 3; do
-            gh release upload "$TEST_RELEASE_TAG" roves_action_android_debug.apk --clobber && exit 0
+            gh release upload "$TEST_RELEASE_TAG" roves_action_android_release.apk --clobber && exit 0
             echo "upload attempt $attempt failed, retrying in $((attempt * 10))s..." >&2
             sleep $((attempt * 10))
           done

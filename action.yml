@@ -946,8 +946,27 @@ runs:
         fi
 
         echo "./mach bundle ${args[*]} ${{ inputs.bundle-params }}"
-        ./mach bundle "${args[@]}" ${{ inputs.bundle-params }}
+        # Captures the real exit code and separates stdout/stderr explicitly, instead of
+        # letting `set -e` abort the script the instant this fails, before anything can
+        # report why. Re-added 2026-09-17 after the exact same silent "Bundle written to
+        # ... / Process completed with exit code 1" symptom (first seen and diagnosed as
+        # transient on 2026-09-15, see git history: f65fc19/2696867) reproduced again,
+        # identically, across every base-mode matrix leg on two consecutive attempts. Since
+        # it's now recurred on unrelated days with no functional code change in between,
+        # this diagnostic capture is worth keeping permanently rather than reverting it
+        # again the moment one clean run is seen -- it's zero-cost or the actual bug
+        # resurfaces without any way to see why.
+        set +e
+        ./mach bundle "${args[@]}" ${{ inputs.bundle-params }} >"$RUNNER_TEMP/mach-bundle-stdout.log" 2>"$RUNNER_TEMP/mach-bundle-stderr.log"
+        mach_exit=$?
+        set -e
+        echo "::notice::mach bundle exited with code $mach_exit"
+        echo "=== mach bundle stdout ==="
+        cat "$RUNNER_TEMP/mach-bundle-stdout.log"
+        echo "=== mach bundle stderr ==="
+        cat "$RUNNER_TEMP/mach-bundle-stderr.log"
         [ "${{ inputs.android-release }}" = "true" ] && rm -f "$RUNNER_TEMP/roves-android-release.keystore"
+        exit "$mach_exit"
 
     # Renamed to a named subfolder before zipping, rather than zipping the output directory's
     # contents directly at the archive root — otherwise extracting dumps play.exe/play plus a

@@ -715,3 +715,9 @@ Marketplace"** — a manual, web-UI-only step (requires org-owner permissions an
 publishing account) that this workflow deliberately doesn't attempt to automate. GitHub
 validates `action.yml`'s `name`/`description`/`icon`/`color` at that point (`description` in
 particular has a hard 125-character limit) — fix and re-release if it flags anything.
+
+
+The engine also has a separate `V8 migration checks` workflow for isolated scripting tests
+on Windows, Linux and macOS, with normal and JIT-less configurations. This development-only
+matrix does not change this action's pinned engine or game packaging options. Engine-wide
+contributor instructions are in [AGENTS.md](https://github.com/DRincs-Productions/roves/blob/main/AGENTS.md).

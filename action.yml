@@ -609,7 +609,7 @@ runs:
       shell: bash
       run: |
         mkdir -p "$HOME/android-sdk/cmdline-tools"
-        curl -fsSL -o /tmp/cmdline-tools.zip \
+        curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors -o /tmp/cmdline-tools.zip \
           "https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip"
         unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools-extract
         rm /tmp/cmdline-tools.zip
@@ -702,7 +702,7 @@ runs:
         mkdir -p "$dest"
         url="https://github.com/DRincs-Productions/roves/releases/download/v0.5.2/roves_shell_${platform}${suffix}.zip"
         echo "Downloading $url"
-        curl -fSL "$url" -o "$dest/shell.zip"
+        curl -fSL --retry 5 --retry-delay 5 --retry-all-errors "$url" -o "$dest/shell.zip"
 
         # `roves_shell_<platform>.zip`'s single top-level folder is always named `roves`
         # (release.yml's own PACKAGE_NAME) -- see shell.rs's own comment on the same

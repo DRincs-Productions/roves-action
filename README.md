@@ -355,7 +355,8 @@ save-data folder that shouldn't be compressed:
     # default: false
     with-debug-assertions: false
 
-    # Build mozjs with debug assertions ([servo] `--debug-mozjs`).
+    # Deprecated ([servo] `--debug-mozjs`): built mozjs (SpiderMonkey) with debug assertions;
+    # ignored by engine releases that run JavaScript on V8.
     #
     # default: false
     debug-mozjs: false

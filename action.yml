@@ -132,7 +132,7 @@ inputs:
     required: false
     default: 'false'
   debug-mozjs:
-    description: '[servo] `--debug-mozjs`: build mozjs with debug assertions.'
+    description: '[servo] `--debug-mozjs`: deprecated. Built mozjs (SpiderMonkey) with debug assertions; engine releases that run JavaScript on V8 ignore it.'
     required: false
     default: 'false'
   with-frame-pointer:

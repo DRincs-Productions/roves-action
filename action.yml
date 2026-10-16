@@ -255,10 +255,6 @@ inputs:
     description: '[roves] Your Apple Developer Program Team ID, passed through as `IOS_SIGNING_TEAM_ID`. Requires `ios-release: ''true''`.'
     required: false
     default: ''
-  ohos:
-    description: '[servo] `--ohos`: build for the default OpenHarmony target. Not currently a supported Roves platform — see the engine README.'
-    required: false
-    default: 'false'
   win-arm64:
     description: '[servo] `--win-arm64`: use the arm64 Windows target instead of x64.'
     required: false
@@ -428,7 +424,6 @@ runs:
         check coverage "${{ inputs.coverage }}" "'false'" "false"
         check android "${{ inputs.android }}" "'false'" "false"
         check ios "${{ inputs.ios }}" "'false'" "false"
-        check ohos "${{ inputs.ohos }}" "'false'" "false"
         check win-arm64 "${{ inputs.win-arm64 }}" "'false'" "false"
         check flavor "${{ inputs.flavor }}" "unset" ""
         check build-params "${{ inputs.build-params }}" "unset" ""
@@ -534,47 +529,8 @@ runs:
       uses: actions/checkout@v4
       with:
         repository: DRincs-Productions/roves
-        ref: v0.7.10
+        ref: v0.7.11
         path: roves-src
-
-    # mach's own command loader (python/mach_bootstrap.py's MACH_MODULES list) always loads
-    # python/servo/testing_commands.py, which imports WPT test tooling living under
-    # tests/wpt/ -- a directory DRincs-Productions/roves deliberately excludes from git
-    # (~1.3GB of WPT conformance tests, irrelevant here). Without it, every mach command
-    # except `bootstrap` itself (which has its own fast path skipping this module) crashes
-    # immediately with "ModuleNotFoundError: No module named 'localpaths'", before doing
-    # anything else -- confirmed by reproducing this locally, in both mach build (advanced
-    # mode) and mach bundle (always). We only need the small Python tooling package that
-    # makes those imports resolve (tests/wpt/tests/tools/, ~90MB), not the actual multi-GB
-    # WPT test suite, so sparse-checkout just that from upstream servo/servo (which does
-    # track it) -- mirrors the exact same workaround in DRincs-Productions/roves's own
-    # release.yml, which hits this identical crash the identical way. '0.4.0' is the
-    # upstream Servo tag the pinned roves engine version above is vendored from (see that
-    # engine's own CUSTOMIZATIONS.md) -- keep it in sync whenever the pinned roves tag above
-    # is bumped to a release vendored from a different Servo version.
-    - name: Fetch tests/wpt/tests/tools (mach's command loader needs it to exist)
-      # Skipped for ios='true' EXCEPT when ios-release='true': the default unsigned iOS path
-      # (the "iOS bundle" step below) never invokes `mach` at all (support/ios/bundle.py is a
-      # standalone script -- see its own action.yml input's doc comment), so this workaround
-      # for mach's own command loader would be pure wasted network time there. ios-release
-      # goes through `mach bundle --ios --ios-release` instead (see that step below), which
-      # needs this exactly like every other `mach` invocation does.
-      if: inputs.ios != 'true' || inputs.ios-release == 'true'
-      shell: bash
-      working-directory: roves-src
-      run: |
-        set -euo pipefail
-        rm -rf /tmp/roves-action-wpt-tools-src
-        git init -q /tmp/roves-action-wpt-tools-src
-        git -C /tmp/roves-action-wpt-tools-src remote add origin https://github.com/servo/servo.git
-        git -C /tmp/roves-action-wpt-tools-src config core.sparseCheckout true
-        git -C /tmp/roves-action-wpt-tools-src sparse-checkout init --cone
-        git -C /tmp/roves-action-wpt-tools-src sparse-checkout set tests/wpt/tests/tools
-        git -C /tmp/roves-action-wpt-tools-src fetch --depth 1 --filter=blob:none origin v0.5.0
-        git -C /tmp/roves-action-wpt-tools-src checkout FETCH_HEAD
-        mkdir -p tests/wpt
-        cp -r /tmp/roves-action-wpt-tools-src/tests/wpt/tests tests/wpt/tests
-        rm -rf /tmp/roves-action-wpt-tools-src
 
     - name: Setup python (mach needs a consistent python3 across all 3 OSes)
       uses: actions/setup-python@v5
@@ -656,9 +612,7 @@ runs:
     - name: mach bootstrap
       # Skipped for ios='true' unconditionally, including ios-release='true': `mach bundle
       # --ios[--ios-release]` never compiles anything (no NDK/GStreamer/Rust involved, just
-      # XcodeGen + xcodebuild) -- there's nothing for bootstrap to install either way, unlike
-      # the wpt/tools fetch above, which mach's command loader needs regardless of whether
-      # anything actually gets compiled.
+      # XcodeGen + xcodebuild) -- there's nothing for bootstrap to install either way.
       if: inputs.bootstrap == 'true' && inputs.advanced-mode == 'true' && inputs.ios != 'true'
       shell: bash
       working-directory: roves-src
@@ -700,7 +654,7 @@ runs:
 
         dest="${{ github.workspace }}/roves-prebuilt-shell"
         mkdir -p "$dest"
-        url="https://github.com/DRincs-Productions/roves/releases/download/v0.7.10/roves_shell_${platform}${suffix}.zip"
+        url="https://github.com/DRincs-Productions/roves/releases/download/v0.7.11/roves_shell_${platform}${suffix}.zip"
         echo "Downloading $url"
         curl -fSL --retry 5 --retry-delay 5 --retry-all-errors "$url" -o "$dest/shell.zip"
 
@@ -752,7 +706,6 @@ runs:
         [ "${{ inputs.use-crown }}" = "true" ] && args+=(--use-crown)
         [ "${{ inputs.coverage }}" = "true" ] && args+=(--coverage)
         [ "${{ inputs.android }}" = "true" ] && args+=(--android)
-        [ "${{ inputs.ohos }}" = "true" ] && args+=(--ohos)
         [ "${{ inputs.win-arm64 }}" = "true" ] && args+=(--win-arm64)
         [ -n "${{ inputs.flavor }}" ] && args+=(--flavor "${{ inputs.flavor }}")
         [ "${{ inputs.verbose }}" = "true" ] && args+=(--verbose)

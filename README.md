@@ -406,12 +406,6 @@ save-data folder that shouldn't be compressed:
     # default: false
     ios: false
 
-    # Build for the default OpenHarmony target ([servo] `--ohos`). Not a supported Roves
-    # platform yet.
-    #
-    # default: false
-    ohos: false
-
     # Use the arm64 Windows target instead of x64 ([servo] `--win-arm64`).
     #
     # default: false
@@ -644,7 +638,7 @@ Every input that only exists to control *how the engine compiles* is incompatibl
 mode — a prebuilt shell has one fixed build configuration (a `--release` build, the real
 GStreamer media stack, no sanitizers), so `features` (besides `'steam'`, the one published
 variant), `target`, `media-stack`, every sanitizer/debug/`--use-crown`/`--coverage` flag,
-`android`/`ios`/`ohos`/`win-arm64`, `flavor`, `build-params`, `bin`, and
+`android`/`ios`/`win-arm64`, `flavor`, `build-params`, `bin`, and
 `nightly` all need `advanced-mode: 'true'` (see below) — setting any of them to a non-default
 value in base mode fails the run with a clear error rather than silently ignoring your input.
 Everything else — `content-dir`, `icon-png`/`icon-ico`, and all of `mach bundle`'s own inputs

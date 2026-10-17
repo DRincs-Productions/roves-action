@@ -1,5 +1,8 @@
 # Roves GitHub Action
 
+The prebuilt shell and source checkout target Roves **v0.7.12**, including bounded audio
+analysis transport, cheaper structured-clone storage, and verified idle-worker cleanup.
+
 This GitHub Action packages your already-built web content, using
 [Roves](https://github.com/DRincs-Productions/roves) — a customized Servo fork used as a
 runtime for shipping web-based games as real native apps instead of as a browser tab — into a

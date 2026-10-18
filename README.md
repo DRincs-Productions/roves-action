@@ -1,35 +1,36 @@
 # Roves GitHub Action
 
-The prebuilt shell and source checkout target Roves **v0.7.12**, including bounded audio
-analysis transport, cheaper structured-clone storage, and verified idle-worker cleanup.
+The prebuilt shell and source checkout target Roves **v0.7.13**, including native V8
+global-property lookup, worker intrinsic lookup improvements, and safe reporting of
+exceptions without source positions. Whole-game CPU gains are still being measured.
 
 This GitHub Action packages your already-built web content, using
-[Roves](https://github.com/DRincs-Productions/roves) — a customized Servo fork used as a
-runtime for shipping web-based games as real native apps instead of as a browser tab — into a
+[Roves](https://github.com/DRincs-Productions/roves) â€” a customized Servo fork used as a
+runtime for shipping web-based games as real native apps instead of as a browser tab â€” into a
 double-click-ready native bundle for macOS, Linux, and Windows: `play.app` / `play` /
 `play.exe`, or a `.deb` on Linux.
 
 By default it downloads the same prebuilt shell
 [Roves Packmaster](https://github.com/DRincs-Productions/roves-packmaster) itself uses and
-packs your content into it — same settings surface as Packmaster, no native toolchain to
+packs your content into it â€” same settings surface as Packmaster, no native toolchain to
 install, nothing compiled. Set `advanced-mode: 'true'` to instead check out and compile the
 engine from source with `mach build` + `mach bundle` (see
 [DRincs-Productions/roves](https://github.com/DRincs-Productions/roves)), mirroring that
 repo's own
 [`.github/workflows/test.yml`](https://github.com/DRincs-Productions/roves/blob/main/.github/workflows/test.yml)
-— slower, but every `mach build` flag becomes available, at your own risk. See "Advanced
+â€” slower, but every `mach build` flag becomes available, at your own risk. See "Advanced
 mode: compiling from source" below.
 
 ## What this action does *not* do
 
-- **Build your game's own web content.** That's your bundler's job (Vite, webpack, whatever) —
+- **Build your game's own web content.** That's your bundler's job (Vite, webpack, whatever) â€”
   run it in a step before this action, then point `content-dir` at the result.
 - **Upload anything anywhere.** This action produces a zipped bundle on disk and exposes its
-  path as an output (`archive-path`) — attaching it to a release, a workflow artifact, an
+  path as an output (`archive-path`) â€” attaching it to a release, a workflow artifact, an
   itch.io upload, etc. is your own workflow's job. See the examples below for both the
   "workflow artifact" and "GitHub Release" flavors.
 - **Cross-compile for consoles.** Desktop (Windows/macOS/Linux) is the only thing that actually
-  works today — run this action on `windows-latest`/`macos-latest`/`ubuntu-latest`, one job per
+  works today â€” run this action on `windows-latest`/`macos-latest`/`ubuntu-latest`, one job per
   platform. See [Supported platforms](https://github.com/DRincs-Productions/roves#supported-platforms)
   in the engine's own README.
 
@@ -82,7 +83,7 @@ jobs:
 
 ## More examples
 
-**Publish to a GitHub Release instead of a workflow artifact** — triggers on a version tag,
+**Publish to a GitHub Release instead of a workflow artifact** â€” triggers on a version tag,
 builds all three platforms, and attaches each zip to a release for that tag:
 
 ```yml
@@ -127,7 +128,7 @@ jobs:
         run: gh release upload "${{ github.ref_name }}" "${{ steps.roves.outputs.archive-path }}"
 ```
 
-**An installable package instead of the default portable binary** — `deb`/`msi`/`dmg` are
+**An installable package instead of the default portable binary** â€” `deb`/`msi`/`dmg` are
 each specific to their own OS (see "Portable vs. installable packages" below), so a
 multi-platform matrix picks the right one per `os`, plus content packing tuned for a
 save-data folder that shouldn't be compressed:
@@ -145,7 +146,7 @@ save-data folder that shouldn't be compressed:
       local-data/**
 ```
 
-**A custom game icon** — works in the default base mode, no `advanced-mode` needed:
+**A custom game icon** â€” works in the default base mode, no `advanced-mode` needed:
 
 ```yml
 - uses: DRincs-Productions/roves-action@v0
@@ -179,7 +180,7 @@ save-data folder that shouldn't be compressed:
     # default: true
     bootstrap: true
 
-    # ── Your game's content ──────────────────────────────────────────────────────
+    # â”€â”€ Your game's content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Path (relative to your repo root) to your already-built web content, e.g. a
     # Vite/webpack dist/ folder. Roves doesn't know or care what produced it.
     #
@@ -295,7 +296,7 @@ save-data folder that shouldn't be compressed:
     # default: unset
     ios-team-id: ''
 
-    # ── `mach build` — plain upstream Servo flags, none of these are Roves-specific ─
+    # â”€â”€ `mach build` â€” plain upstream Servo flags, none of these are Roves-specific â”€
     # Every one of these needs advanced-mode: 'true' -- they only control how the engine
     # itself compiles, which only happens in that mode. See "Advanced mode: compiling from
     # source" below.
@@ -305,7 +306,7 @@ save-data folder that shouldn't be compressed:
     # default: false
     release: false
 
-    # Debug build ([servo] `--dev`) — the implicit default if release/production/profile
+    # Debug build ([servo] `--dev`) â€” the implicit default if release/production/profile
     # are all left unset.
     #
     # default: false
@@ -322,7 +323,7 @@ save-data folder that shouldn't be compressed:
     profile: ''
 
     # Cross-compile target triple ([servo] `--target`). Native desktop builds should leave
-    # this empty — see "What this action does not do" above.
+    # this empty â€” see "What this action does not do" above.
     #
     # default: unset
     target: ''
@@ -374,7 +375,7 @@ save-data folder that shouldn't be compressed:
     # default: false
     use-crown: false
 
-    # Build with code-coverage instrumentation ([servo] `--coverage`) — also affects which
+    # Build with code-coverage instrumentation ([servo] `--coverage`) â€” also affects which
     # binary `mach bundle` looks for.
     #
     # default: false
@@ -386,7 +387,7 @@ save-data folder that shouldn't be compressed:
     # advanced-mode: true (an engine source checkout for mach's own Python tooling and the
     # Android Gradle project), but works on any runner OS now, not just Linux/macOS. Debug
     # .apk by default; android-release: true (above) produces a real, signed one instead. No
-    # prebuilt Android shell is published to download — see the engine README's platform
+    # prebuilt Android shell is published to download â€” see the engine README's platform
     # table, and android-app-name/android-orientation/android-theme-color above for the
     # bundle-time side of this.
     #
@@ -439,9 +440,9 @@ save-data folder that shouldn't be compressed:
     # default: unset
     build-params: ''
 
-    # ── `mach bundle` — added by Roves, no upstream Servo equivalent ────────────────
+    # â”€â”€ `mach bundle` â€” added by Roves, no upstream Servo equivalent â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Entry html file, relative to content-dir ([roves] `--html-file`). Defaults to
-    # "index.html", not mach's own "dist/index.html" default — see "Tips and Caveats".
+    # "index.html", not mach's own "dist/index.html" default â€” see "Tips and Caveats".
     #
     # default: index.html
     html-file: ''
@@ -477,7 +478,7 @@ save-data folder that shouldn't be compressed:
     content-max-pack-size: ''
 
     # Globs (relative to content-dir) of files to leave loose/uncompressed instead of
-    # packing ([roves] `--content-exclude`, repeatable) — one per line for more than one.
+    # packing ([roves] `--content-exclude`, repeatable) â€” one per line for more than one.
     #
     # default: unset
     content-exclude: ''
@@ -489,13 +490,13 @@ save-data folder that shouldn't be compressed:
     content-boot-include: ''
 
     # Build an installable .deb instead of the default self-contained binary ([roves]
-    # `--deb`). Linux only — see "Portable vs. installable packages" below.
+    # `--deb`). Linux only â€” see "Portable vs. installable packages" below.
     #
     # default: false
     deb: false
 
     # Build an installable .msi instead of the default self-contained play.exe bundle
-    # ([roves] `--msi`). Windows only. Requires WiX's candle/light on PATH — see "Portable
+    # ([roves] `--msi`). Windows only. Requires WiX's candle/light on PATH â€” see "Portable
     # vs. installable packages" below.
     #
     # default: false
@@ -515,14 +516,14 @@ save-data folder that shouldn't be compressed:
 
     # Package version to use with deb/msi/dmg ([roves] `--package-version`). Ignored unless
     # one of those is true. For msi specifically, must be 1-4 dot-separated integers
-    # (0-65535 each, e.g. "1.2.3") — mach bundle errors clearly otherwise.
+    # (0-65535 each, e.g. "1.2.3") â€” mach bundle errors clearly otherwise.
     #
     # default: 0.0.0
     package-version: ''
 
     # Ship a diagnose.bat/diagnose.sh alongside the bundle ([roves] `--diagnostic-script`,
     # portable/msi/dmg only, not deb) that launches the game from a console and prints its
-    # exit code plus roves.log inline — for testers to run when a build appears to do
+    # exit code plus roves.log inline â€” for testers to run when a build appears to do
     # nothing. Off by default: a real release has no reason to carry this debug tooling
     # unasked.
     #
@@ -542,15 +543,15 @@ save-data folder that shouldn't be compressed:
     # default: unset
     nightly: ''
 
-    # Extra launch arguments baked into the bundle — passed to servoshell every time the
+    # Extra launch arguments baked into the bundle â€” passed to servoshell every time the
     # shipped game starts, space-separated.
     #
     # default: unset
     bundle-params: ''
 
-    # ── Packaging — this action's own convention, not a mach flag ───────────────────
+    # â”€â”€ Packaging â€” this action's own convention, not a mach flag â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Base name for the zipped archive and the folder inside it, e.g. "my-game" produces
-    # my-game.zip containing a my-game/ folder (never zipped at the archive root — see
+    # my-game.zip containing a my-game/ folder (never zipped at the archive root â€” see
     # "Tips and Caveats").
     #
     # default: roves-game
@@ -567,13 +568,13 @@ save-data folder that shouldn't be compressed:
 ## Custom game icon
 
 `icon-png` sets the window/taskbar icon; `icon-ico` (Windows only) sets the `.exe`'s own icon
-resource — both applied by `mach bundle` itself, after packaging, in either mode (see
+resource â€” both applied by `mach bundle` itself, after packaging, in either mode (see
 [CUSTOMIZATIONS.md]'s "Runtime + post-build game icon" entry for exactly how). Not supported
-on macOS yet — its own Dock/app icon has no runtime override, and `mach bundle` prints a
+on macOS yet â€” its own Dock/app icon has no runtime override, and `mach bundle` prints a
 warning and ignores `icon-png` there rather than failing the run.
 
 Omit either and `mach bundle` auto-detects one instead: if `content-dir` itself contains an
-`icon.png`/`icon.ico`, that's used automatically — many bundlers already emit one there for
+`icon.png`/`icon.ico`, that's used automatically â€” many bundlers already emit one there for
 their own PWA manifest, so a game that already has one gets its own icon for free, no input
 needed (see [CUSTOMIZATIONS.md]'s 2026-08-27 entry). Falls back to Roves' own default
 branding only if neither the input nor an auto-detected file exists.
@@ -582,18 +583,18 @@ branding only if neither the input nor an auto-detected file exists.
 
 ## Portable vs. installable packages
 
-By default, on every platform, this action produces a **portable** bundle — no install step.
+By default, on every platform, this action produces a **portable** bundle â€” no install step.
 Each platform also has one installable alternative, each gated to its own OS the same way
 `deb` already was:
 
 | Platform (`runner.os`) | Portable (default) | Installable input |
 | --- | --- | --- |
-| `Linux` | `play` + `.so` deps, flat | `deb: 'true'` → a real `.deb` |
-| `Windows` | `play.exe` + a few DLLs, GStreamer plugins in `lib/` | `msi: 'true'` → a real `.msi` (needs WiX's `candle`/`light` on `PATH` — see the `msi` input's own note and the "Add WiX Toolset to PATH" step this action runs for you when `msi: 'true'` on `windows-latest`) |
-| `macOS` | `play.app` | `dmg: 'true'` → that same `.app`, wrapped in a `.dmg` |
+| `Linux` | `play` + `.so` deps, flat | `deb: 'true'` â†’ a real `.deb` |
+| `Windows` | `play.exe` + a few DLLs, GStreamer plugins in `lib/` | `msi: 'true'` â†’ a real `.msi` (needs WiX's `candle`/`light` on `PATH` â€” see the `msi` input's own note and the "Add WiX Toolset to PATH" step this action runs for you when `msi: 'true'` on `windows-latest`) |
+| `macOS` | `play.app` | `dmg: 'true'` â†’ that same `.app`, wrapped in a `.dmg` |
 
 `deb`/`msi`/`dmg` are each silently ignored on the OSes they don't apply to (see "Tips and
-Caveats" below), so a single input set — including turning more than one on at once — can
+Caveats" below), so a single input set â€” including turning more than one on at once â€” can
 stay the same across a matrix; only the one matching the current runner actually does
 anything. `package-name`/`package-version` name and version whichever installable format
 you asked for; they're ignored entirely when none of `deb`/`msi`/`dmg` are set.
@@ -601,19 +602,19 @@ you asked for; they're ignored entirely when none of `deb`/`msi`/`dmg` are set.
 ## Content packing
 
 By default, `mach bundle` doesn't ship `content-dir` as loose, individually browsable
-files — it packs it into a handful of tar+zstd archives, extracted back by the engine
+files â€” it packs it into a handful of tar+zstd archives, extracted back by the engine
 itself at launch (an eager "boot set" for the html file and whatever it directly
 references, everything else lazily on first request). See
 [DRincs-Productions/roves]'s own README, "Content packing & compression" section, for the
-full design (why, the boot-set/lazy split, the archive layout) — these inputs are a direct
+full design (why, the boot-set/lazy split, the archive layout) â€” these inputs are a direct
 passthrough to the `mach bundle` flags documented there:
 
 | Input | Description | Default |
 | --- | --- | --- |
-| `content-compress` | `auto` or `none` — pack `content-dir` into archives, or copy it in as loose, uncompressed files with none of the below. | `auto` |
+| `content-compress` | `auto` or `none` â€” pack `content-dir` into archives, or copy it in as loose, uncompressed files with none of the below. | `auto` |
 | `content-compression-level` | zstd compression level used by `content-compress: 'auto'`. Low favors speed. | `1` |
 | `content-max-pack-size` | Max size per content archive (e.g. `500M`, `1G`) before splitting into further parts. | `500M` |
-| `content-exclude` | Globs (relative to `content-dir`) of files to leave loose/uncompressed instead of packing — one per line for more than one. | unset |
+| `content-exclude` | Globs (relative to `content-dir`) of files to leave loose/uncompressed instead of packing â€” one per line for more than one. | unset |
 | `content-boot-include` | Globs (relative to `content-dir`), one per line for more than one, of extra files to force into the eager boot set. | unset |
 
 [DRincs-Productions/roves]: https://github.com/DRincs-Productions/roves#content-packing--compression
@@ -621,13 +622,13 @@ passthrough to the `mach bundle` flags documented there:
 ## Base mode (the default)
 
 By default (`advanced-mode: 'false'`, which you never need to set explicitly), this action
-skips checking out and compiling the engine entirely — it downloads the same
+skips checking out and compiling the engine entirely â€” it downloads the same
 `roves_shell_<platform>[_steam].zip` release asset
 [Roves Packmaster](https://github.com/DRincs-Productions/roves-packmaster) itself downloads, at
-this action's own pinned engine tag (hardcoded in `action.yml`, not a configurable input — see
+this action's own pinned engine tag (hardcoded in `action.yml`, not a configurable input â€” see
 "Releasing this action" below for how that pin gets bumped), and runs
 `mach bundle --bin <the extracted binary>` against it. No Rust/native toolchain build of the
-engine at all — just a download plus packing your content into it, which is what makes it
+engine at all â€” just a download plus packing your content into it, which is what makes it
 fast, and why it needs no `mach bootstrap` step either:
 
 ```yml
@@ -638,20 +639,20 @@ fast, and why it needs no `mach bootstrap` step either:
 ```
 
 Every input that only exists to control *how the engine compiles* is incompatible with base
-mode — a prebuilt shell has one fixed build configuration (a `--release` build, the real
+mode â€” a prebuilt shell has one fixed build configuration (a `--release` build, the real
 GStreamer media stack, no sanitizers), so `features` (besides `'steam'`, the one published
 variant), `target`, `media-stack`, every sanitizer/debug/`--use-crown`/`--coverage` flag,
 `android`/`ios`/`win-arm64`, `flavor`, `build-params`, `bin`, and
-`nightly` all need `advanced-mode: 'true'` (see below) — setting any of them to a non-default
+`nightly` all need `advanced-mode: 'true'` (see below) â€” setting any of them to a non-default
 value in base mode fails the run with a clear error rather than silently ignoring your input.
-Everything else — `content-dir`, `icon-png`/`icon-ico`, and all of `mach bundle`'s own inputs
-(`html-file`, `content-compress`, `deb`/`msi`/`dmg`, `diagnostic-script`, ...) — works exactly
+Everything else â€” `content-dir`, `icon-png`/`icon-ico`, and all of `mach bundle`'s own inputs
+(`html-file`, `content-compress`, `deb`/`msi`/`dmg`, `diagnostic-script`, ...) â€” works exactly
 the same in either mode, since none of that is a build-time concern.
 
 ## Advanced mode: compiling from source
 
 Set `advanced-mode: 'true'` to check out this action's pinned engine tag's source and build it
-from source with `mach build` + `mach bundle` instead — mirroring the engine repo's own
+from source with `mach build` + `mach bundle` instead â€” mirroring the engine repo's own
 [`.github/workflows/test.yml`](https://github.com/DRincs-Productions/roves/blob/main/.github/workflows/test.yml):
 
 ```yml
@@ -665,54 +666,54 @@ from source with `mach build` + `mach bundle` instead — mirroring the engine r
 
 This is slower (compiling Rust, with a large dependency graph, on every call) and needs
 `mach bootstrap` to install the engine's own native build dependencies first (this action
-does that for you, unless `bootstrap: 'false'`) — but every `mach build` flag becomes
+does that for you, unless `bootstrap: 'false'`) â€” but every `mach build` flag becomes
 available: cross-compile `target`, extra Cargo `features`, sanitizers, an explicit
 `bin`/`nightly` to bundle instead of building, and so on (`icon-png`/`icon-ico` already work
-the same in base mode — see above, nothing advanced-mode-specific about them anymore).
-The engine tag itself is still this action's own pinned version — not something you can point
+the same in base mode â€” see above, nothing advanced-mode-specific about them anymore).
+The engine tag itself is still this action's own pinned version â€” not something you can point
 at an unreleased commit; if you need that, build against a fork of this action instead.
 
 If your CI runs this often, either cache Cargo's registry/target directories yourself around
-this action (e.g. `actions/cache` keyed on this action's own version + your lockfile — this
+this action (e.g. `actions/cache` keyed on this action's own version + your lockfile â€” this
 action doesn't do that for you, since the right cache key/scope depends on your own workflow),
 or reconsider whether you actually need advanced mode at all for that particular run.
 
 ## Tips and Caveats
 
-- Every input is tagged `[servo]` (plain upstream Servo — `mach build`, or `mach bundle`'s
+- Every input is tagged `[servo]` (plain upstream Servo â€” `mach build`, or `mach bundle`'s
   build-profile-selection flags, which exist purely to *locate* the binary `mach build`
-  already produced) or `[roves]` (added by Roves — `mach bundle` doesn't exist upstream at
+  already produced) or `[roves]` (added by Roves â€” `mach bundle` doesn't exist upstream at
   all). Almost everything is optional; the one required input is `content-dir`.
 - `html-file` defaults to `index.html`, not mach's own `dist/index.html` default: this action
   always passes `content-dir` as an absolute path pointing *directly* at your built output
-  (e.g. the `dist/` folder itself, not its parent) — so the entry file is normally right at
+  (e.g. the `dist/` folder itself, not its parent) â€” so the entry file is normally right at
   that root. Override `html-file` if your entry html lives deeper inside `content-dir`.
 - `content-exclude`/`content-boot-include` are repeatable flags on the real `mach bundle` CLI;
   pass more than one glob as a YAML multi-line string (one per line), not a comma/space-
   separated list.
 - If you set both `release` and `dev` (or any other mutually-exclusive pair mach itself
-  rejects), that's forwarded to mach as-is and mach's own argument parser is what errors —
+  rejects), that's forwarded to mach as-is and mach's own argument parser is what errors â€”
   this action does no validation of its own on top of mach's.
 - `deb`/`msi`/`dmg` are each only honored on their own OS; setting any of them on the wrong
   runner is silently ignored rather than erroring, so a single input set (even with more
-  than one turned on) can stay the same across a matrix — see "Portable vs. installable
+  than one turned on) can stay the same across a matrix â€” see "Portable vs. installable
   packages" above.
-- This action does not set up Node/npm/etc. for you — building your game's own web content is
+- This action does not set up Node/npm/etc. for you â€” building your game's own web content is
   entirely your own step, before calling this action.
 
 ## Releasing this action
 
-Push a `v<major>.<minor>.<patch>` tag (e.g. `v0.1.3`) — see
+Push a `v<major>.<minor>.<patch>` tag (e.g. `v0.1.3`) â€” see
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which creates a GitHub
 Release for that tag and force-moves the major-version tag (`v0`) to point at it, so consumers
 pinning `uses: DRincs-Productions/roves-action@v0` automatically get every `0.x.y` update.
 
 To also list a release on the [GitHub Marketplace](https://github.com/marketplace?type=actions):
 open that release's **Edit release** page and check **"Publish this Action to the GitHub
-Marketplace"** — a manual, web-UI-only step (requires org-owner permissions and 2FA on the
+Marketplace"** â€” a manual, web-UI-only step (requires org-owner permissions and 2FA on the
 publishing account) that this workflow deliberately doesn't attempt to automate. GitHub
 validates `action.yml`'s `name`/`description`/`icon`/`color` at that point (`description` in
-particular has a hard 125-character limit) — fix and re-release if it flags anything.
+particular has a hard 125-character limit) â€” fix and re-release if it flags anything.
 
 
 The engine also has a separate `V8 migration checks` workflow for isolated scripting tests

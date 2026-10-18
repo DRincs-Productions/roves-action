@@ -6,7 +6,7 @@ branding:
   color: 'purple'
 
 inputs:
-  # â”€â”€ Roves engine checkout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  # ── Roves engine checkout ──────────────────────────────────────────────────────
   # No roves-repo/roves-ref/roves-src-path inputs -- this action always targets
   # DRincs-Productions/roves at a pinned tag, hardcoded as a literal in the "Checkout Roves
   # engine source" step's `ref:` and the "Download prebuilt shell" step's release URL below
@@ -36,19 +36,19 @@ inputs:
     required: false
     default: 'true'
 
-  # â”€â”€ Your game's content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  # ── Your game's content ────────────────────────────────────────────────────────
   content-dir:
     description: >-
       Path (relative to your repo root) to your already-built web content, e.g. a Vite/webpack
-      dist/ folder. Building that content is your own job, before this action â€” Roves doesn't
+      dist/ folder. Building that content is your own job, before this action — Roves doesn't
       know or care what bundler/framework produced it. Required.
     required: true
   icon-png:
     description: >-
       Path (relative to your repo root) to a window/taskbar icon (PNG). Works in base mode
-      too (`mach bundle --icon-png`, applied after packaging, no compile needed) â€” no longer
+      too (`mach bundle --icon-png`, applied after packaging, no compile needed) — no longer
       an advanced-mode-only, compile-time input. Not supported on macOS yet (its own Dock/app
-      icon has no runtime override â€” see the engine's own CUSTOMIZATIONS.md). Omit to keep
+      icon has no runtime override — see the engine's own CUSTOMIZATIONS.md). Omit to keep
       Roves' own default branding.
     required: false
     default: ''
@@ -86,7 +86,7 @@ inputs:
     required: false
     default: ''
 
-  # â”€â”€ `mach build` (stock Servo flags â€” none of these are Roves-specific) â”€â”€â”€â”€â”€â”€â”€
+  # ── `mach build` (stock Servo flags — none of these are Roves-specific) ───────
   release:
     description: '[servo] `--release`: optimized build.'
     required: false
@@ -151,19 +151,19 @@ inputs:
     description: >-
       [roves] Package this game as a native Android WebView APK instead of a desktop bundle.
       Doesn't compile Servo or the Rust engine at all as of the engine's 2026-09-13 mobile
-      pivot to native WebView (Android WebView/iOS WKWebView instead of Servo) â€” see the
+      pivot to native WebView (Android WebView/iOS WKWebView instead of Servo) — see the
       engine repo's own `support/MOBILE.md`/CUSTOMIZATIONS.md. Still requires
       `advanced-mode: 'true'` (this needs an engine source checkout for `mach bundle`'s own
       Python tooling and the Android Gradle project, even though nothing gets cross-compiled),
       but no longer needs the NDK, and no longer needs a Linux/macOS runner specifically.
-      Early/experimental â€” debug .apk only, no prebuilt Android shell is published to
+      Early/experimental — debug .apk only, no prebuilt Android shell is published to
       download, see the engine README's "Supported platforms" table.
     required: false
     default: 'false'
   android-release:
     description: >-
       [servo] `--android-release`: build a real, signed release .apk instead of the default
-      debug one. Requires `android: 'true'` and all four `android-keystore-*` inputs below â€”
+      debug one. Requires `android: 'true'` and all four `android-keystore-*` inputs below —
       fails clearly rather than silently falling back to a debug-signed "release" build.
     required: false
     default: 'false'
@@ -191,29 +191,29 @@ inputs:
       [roves] Package this game as a staged Xcode project instead of a desktop bundle. By
       default (`ios-release: 'false'`) this still shells out directly to the engine's
       `support/ios/bundle.py` + XcodeGen, exactly as before, producing both the raw,
-      ready-to-open .xcodeproj (to finish yourself in Xcode â€” pick a team, add icons,
+      ready-to-open .xcodeproj (to finish yourself in Xcode — pick a team, add icons,
       archive/export) and an unsigned iOS Simulator build for an immediate look without
       touching Xcode. Set `ios-release: 'true'` (plus the `ios-certificate-*`/
       `ios-provisioning-profile-*`/`ios-team-id` inputs below) to instead go through the
-      engine's `mach bundle --ios --ios-release` and get back a real, signed .ipa â€” see that
+      engine's `mach bundle --ios --ios-release` and get back a real, signed .ipa — see that
       input's own description. Requires `advanced-mode: 'true'` (for the engine source
-      checkout both paths need) and a macOS runner (Xcode/XcodeGen requirement) â€” fails
+      checkout both paths need) and a macOS runner (Xcode/XcodeGen requirement) — fails
       clearly otherwise rather than silently producing nothing. `icon-png`/`icon-ico` aren't
       supported with `ios: 'true'` yet (neither path has icon-override support). Early/
-      experimental â€” see the engine README's "Supported platforms" table.
+      experimental — see the engine README's "Supported platforms" table.
     required: false
     default: 'false'
   ios-app-name:
     description: >-
-      [roves] The app's display name â€” `bundle.py --app-name <NAME>` (unsigned path) or
+      [roves] The app's display name — `bundle.py --app-name <NAME>` (unsigned path) or
       `mach bundle --ios-app-name <NAME>` (`ios-release: 'true'`). Requires `ios: 'true'`.
-      Defaults to "Roves Game" â€” unlike `android-app-name`, this doesn't yet fall back to
+      Defaults to "Roves Game" — unlike `android-app-name`, this doesn't yet fall back to
       your content's own web manifest.
     required: false
     default: ''
   ios-bundle-id:
     description: >-
-      [roves] The app's bundle identifier (e.g. com.example.mygame) â€” `bundle.py --bundle-id`
+      [roves] The app's bundle identifier (e.g. com.example.mygame) — `bundle.py --bundle-id`
       (unsigned path) or `mach bundle --ios-bundle-id` (`ios-release: 'true'`). Requires
       `ios: 'true'`. Defaults to "org.roves.game".
     required: false
@@ -221,11 +221,11 @@ inputs:
   ios-release:
     description: >-
       [servo] `--ios-release`: archive and export a real, signed .ipa instead of the default
-      unsigned Simulator build â€” goes through `mach bundle --ios --ios-release` instead of the
+      unsigned Simulator build — goes through `mach bundle --ios --ios-release` instead of the
       standalone `bundle.py`/XcodeGen/xcodebuild path `ios: 'true'` otherwise uses (see that
       input's own description), so you no longer get the raw .xcodeproj back, just the signed
       .ipa. Requires `ios: 'true'` and all four `ios-certificate-*`/`ios-provisioning-profile-*`/
-      `ios-team-id` inputs below â€” fails clearly rather than silently producing an unsigned
+      `ios-team-id` inputs below — fails clearly rather than silently producing an unsigned
       build.
     required: false
     default: 'false'
@@ -234,7 +234,7 @@ inputs:
       [roves] Base64-encoded Apple Distribution certificate + private key, exported as a
       .p12 (e.g. `base64 -w0 distribution.p12`), typically stored as a GitHub secret. Decoded
       to a temporary file and passed to `mach bundle` as `IOS_SIGNING_CERTIFICATE_P12_PATH`.
-      This must be a real certificate from your own Apple Developer Program account â€” Apple
+      This must be a real certificate from your own Apple Developer Program account — Apple
       itself must countersign it, nothing this action or the engine does can produce one.
       Requires `ios-release: 'true'`.
     required: false
@@ -272,7 +272,7 @@ inputs:
     required: false
     default: 'false'
   no-package:
-    description: '[servo] `--no-package`: Android only â€” skip packaging into a .apk after building.'
+    description: '[servo] `--no-package`: Android only — skip packaging into a .apk after building.'
     required: false
     default: 'false'
   build-params:
@@ -280,7 +280,7 @@ inputs:
     required: false
     default: ''
 
-  # â”€â”€ `mach bundle` (Roves-added command â€” no upstream Servo equivalent) â”€â”€â”€â”€â”€â”€â”€â”€
+  # ── `mach bundle` (Roves-added command — no upstream Servo equivalent) ────────
   html-file:
     description: '[roves] `--html-file <PATH>`: entry html file, relative to --content-dir.'
     required: false
@@ -327,7 +327,7 @@ inputs:
   msi:
     description: >-
       [roves] `--msi`: build an installable .msi instead of the default self-contained
-      play.exe bundle. Windows only. Requires the WiX Toolset's `candle`/`light` on PATH â€”
+      play.exe bundle. Windows only. Requires the WiX Toolset's `candle`/`light` on PATH —
       the windows-latest GitHub-hosted runner ships these pre-installed but not on PATH by
       default (add `%WIX%\bin` yourself, e.g. via a `pwsh` step, before this action).
     required: false
@@ -348,7 +348,7 @@ inputs:
     description: >-
       [roves] `--package-version <VERSION>`: package version to use with deb/msi/dmg.
       Ignored unless one of those is true. For msi specifically, must be 1-4 dot-separated
-      integers (0-65535 each, e.g. "1.2.3") â€” an MSI file-format constraint; `mach bundle`
+      integers (0-65535 each, e.g. "1.2.3") — an MSI file-format constraint; `mach bundle`
       raises a clear error otherwise.
     required: false
     default: '0.0.0'
@@ -356,7 +356,7 @@ inputs:
     description: >-
       [roves] `--diagnostic-script`: ship a diagnose.bat/diagnose.sh alongside the bundle
       (portable/msi/dmg only, not deb) that launches the game from a console and prints its
-      exit code plus roves.log inline â€” for testers to run when a build appears to do
+      exit code plus roves.log inline — for testers to run when a build appears to do
       nothing. Off by default: a real release has no reason to carry this debug tooling
       unasked.
     required: false
@@ -374,11 +374,11 @@ inputs:
     required: false
     default: ''
 
-  # â”€â”€ Packaging (this action's own convention, not a mach flag) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  # ── Packaging (this action's own convention, not a mach flag) ─────────────────
   artifact-name:
     description: >-
       Base name for the zipped archive and the folder inside it (e.g. "my-game" produces
-      my-game.zip containing a my-game/ folder) â€” see DRincs-Productions/roves's
+      my-game.zip containing a my-game/ folder) — see DRincs-Productions/roves's
       CUSTOMIZATIONS.md on why the bundle is always named-folder-then-zipped, never zipped at
       the archive root.
     required: false
@@ -435,7 +435,7 @@ runs:
 
     # Unlike icon-png/icon-ico (which apply to every platform `mach bundle` supports and so
     # were deliberately left off the base-mode incompatibility check above), these three are
-    # meaningless without android='true' â€” a desktop bundle has no launcher label/screen
+    # meaningless without android='true' — a desktop bundle has no launcher label/screen
     # orientation/status bar to set. This runs regardless of advanced-mode/base mode, since
     # it's checking a different thing than that step (whether these inputs make sense at all
     # for the target platform, not whether the engine was compiled from source).
@@ -537,7 +537,7 @@ runs:
       with:
         python-version: '3.x'
 
-    - name: Setup uv (needed by ./mach â€” see the engine's own README)
+    - name: Setup uv (needed by ./mach — see the engine's own README)
       uses: astral-sh/setup-uv@v5
 
     - name: Prefetch pinned rust toolchain
@@ -605,7 +605,7 @@ runs:
         java-version: '17'
 
     # Windows: mach's own bootstrap shells out to the GStreamer MSI installer via a UAC
-    # elevation prompt, which just hangs forever with no interactive session â€” skip it with
+    # elevation prompt, which just hangs forever with no interactive session — skip it with
     # --skip-platform, safe as long as media-stack=gstreamer isn't actually needed (dummy, the
     # media-stack default here, needs no native media libraries at all). dpkg-dev is required
     # for `mach bundle --deb` but isn't installed by mach bootstrap itself.
@@ -630,7 +630,7 @@ runs:
     # `mach bundle --msi` shells out to WiX's candle/light (see the engine's own
     # post_build_commands.py `_wrap_windows_msi`). The windows-latest GitHub-hosted runner
     # ships the WiX Toolset pre-installed, with $WIX pointing at its install root, but its
-    # bin/ isn't on PATH by default â€” a self-hosted/other Windows runner would need WiX
+    # bin/ isn't on PATH by default — a self-hosted/other Windows runner would need WiX
     # installed some other way before this action, since mach bootstrap doesn't provide it.
     - name: Add WiX Toolset to PATH (Windows, msi=true only)
       if: runner.os == 'Windows' && inputs.msi == 'true'
@@ -832,7 +832,7 @@ runs:
           # locate a binary `mach build` just produced.
           args+=(--bin "${{ steps.prebuilt.outputs.bin-path }}")
         else
-          # Same build-profile-selection flags as `mach build` above â€” bundle doesn't
+          # Same build-profile-selection flags as `mach build` above — bundle doesn't
           # rebuild anything, it just needs these to locate the binary that step already
           # produced.
           [ "${{ inputs.release }}" = "true" ] && args+=(--release)
@@ -875,7 +875,7 @@ runs:
         fi
         [ "${{ inputs.diagnostic-script }}" = "true" ] && args+=(--diagnostic-script)
         # mach bundle itself decides whether either actually applies (--icon-ico only on
-        # Windows, --icon-png not yet on macOS â€” see post_build_commands.py), so both are
+        # Windows, --icon-png not yet on macOS — see post_build_commands.py), so both are
         # passed unconditionally whenever set; no need to gate on runner.os here too.
         [ -n "${{ steps.paths.outputs.icon-png-abs }}" ] && args+=(--icon-png "${{ steps.paths.outputs.icon-png-abs }}")
         [ -n "${{ steps.paths.outputs.icon-ico-abs }}" ] && args+=(--icon-ico "${{ steps.paths.outputs.icon-ico-abs }}")
@@ -922,7 +922,7 @@ runs:
         exit "$mach_exit"
 
     # Renamed to a named subfolder before zipping, rather than zipping the output directory's
-    # contents directly at the archive root â€” otherwise extracting dumps play.exe/play plus a
+    # contents directly at the archive root — otherwise extracting dumps play.exe/play plus a
     # pile of loose DLLs/support files straight into whatever folder you extract into instead
     # of one folder of their own. See DRincs-Productions/roves's CUSTOMIZATIONS.md.
     - name: Package bundle (zip)

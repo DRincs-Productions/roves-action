@@ -3,7 +3,7 @@
 The prebuilt shell and source checkout target Roves **v0.7.13**, including native V8
 global-property lookup, worker intrinsic lookup improvements, and safe reporting of
 exceptions without source positions. Whole-game CPU gains are still being measured.
-Action v0.1.8 publishes this pin through the floating `@v0` release alias.
+Action v0.1.9 publishes this pin through the floating `@v0` release alias.
 
 This GitHub Action packages your already-built web content, using
 [Roves](https://github.com/DRincs-Productions/roves) — a customized Servo fork used as a

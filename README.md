@@ -719,5 +719,8 @@ particular has a hard 125-character limit) — fix and re-release if it flags an
 
 The engine also has a separate `V8 migration checks` workflow for isolated scripting tests
 on Windows, Linux and macOS, with normal and JIT-less configurations. This development-only
-matrix does not change this action's pinned engine or game packaging options. Engine-wide
+matrix also tests the smoke runner itself: failed assertions, incomplete reports, unexpected
+skips and missing Window/CSP/navigation checks fail validation. JIT-less Wasm and explicitly
+configured headless device exceptions are documented in the engine architecture wiki.
+This matrix does not change this action's pinned engine or game packaging options. Engine-wide
 contributor instructions are in [AGENTS.md](https://github.com/DRincs-Productions/roves/blob/main/AGENTS.md).

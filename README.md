@@ -732,3 +732,8 @@ This matrix does not change this action's pinned engine or game packaging option
 debug-only V8 heap snapshot diagnostic (one removed-frame capture in Linux engine CI) is not
 enabled by this action and adds no inputs. Engine-wide
 contributor instructions are in [AGENTS.md](https://github.com/DRincs-Productions/roves/blob/main/AGENTS.md).
+
+The engine's separate `deno_core single-document probe` workflow is a development-only
+isolated experiment on Linux/Windows in normal and JIT-less modes. It does not change this
+action's inputs, pinned engine, packaging outputs or game runtime; deno_core is not adopted
+by the production engine through that probe.

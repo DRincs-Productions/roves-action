@@ -674,6 +674,12 @@ the same in base mode — see above, nothing advanced-mode-specific about them a
 The engine tag itself is still this action's own pinned version — not something you can point
 at an unreleased commit; if you need that, build against a fork of this action instead.
 
+The engine's `test.yml` also runs an SDL3 virtual-gamepad probe before packaging. That probe
+is engine CI only: this action has no matching step or input. In the engine workflow the
+Windows/Linux probe gates packaging and the Steam smoke test, while the macOS probe runs as a
+separate, visible job that does not gate them. Nothing about the inputs or outputs of this
+action changes because of that split.
+
 If your CI runs this often, either cache Cargo's registry/target directories yourself around
 this action (e.g. `actions/cache` keyed on this action's own version + your lockfile — this
 action doesn't do that for you, since the right cache key/scope depends on your own workflow),

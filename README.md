@@ -752,3 +752,6 @@ diagnostic upload does not change this action's pinned release, inputs or bundle
 
 Engine Linux V8 smoke jobs also retain each fresh process runtime log on success or failure;
 this development artifact does not alter bundle outputs or action inputs.
+
+The engine V8 contributor smoke runner enables existing Servo hard-fail mode for disposable
+processes. This is not a new bundle flag or an input exposed by this action.

@@ -749,3 +749,6 @@ snapshot artifact. This changes contributor coverage only, not action inputs or 
 
 Failed engine V8 development builds also retain compiler and smoke logs as CI artifacts. This
 diagnostic upload does not change this action's pinned release, inputs or bundle outputs.
+
+Engine Linux V8 smoke jobs also retain each fresh process runtime log on success or failure;
+this development artifact does not alter bundle outputs or action inputs.

@@ -737,3 +737,12 @@ The engine's separate `deno_core single-document probe` workflow is a developmen
 isolated experiment on Linux/Windows in normal and JIT-less modes. It does not change this
 action's inputs, pinned engine, packaging outputs or game runtime; deno_core is not adopted
 by the production engine through that probe.
+
+The engine CI preparation for the Deno cutover keeps the isolated V8 native crates
+self-contained, including their public-V8 C++ build script and standalone Cargo dependency
+ranges. This action builds the complete pinned engine checkout, so it needs no matching
+input or extra copy step. The in-progress cutover is not enabled by updating this note.
+
+The pending engine V8 CI also watches the complete single-document integration surface
+(script, constellation, embedder, Servo and shell) and uses a document-retention heap
+snapshot artifact. This changes contributor coverage only, not action inputs or outputs.

@@ -746,3 +746,6 @@ input or extra copy step. The in-progress cutover is not enabled by updating thi
 The pending engine V8 CI also watches the complete single-document integration surface
 (script, constellation, embedder, Servo and shell) and uses a document-retention heap
 snapshot artifact. This changes contributor coverage only, not action inputs or outputs.
+
+Failed engine V8 development builds also retain compiler and smoke logs as CI artifacts. This
+diagnostic upload does not change this action's pinned release, inputs or bundle outputs.

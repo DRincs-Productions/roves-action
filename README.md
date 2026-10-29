@@ -774,3 +774,11 @@ Module smoke coverage now also records initial static loading separately from mo
 inserted at runtime (22 required checks). Validated startup/timer observations are retained
 in CI summaries without a performance threshold. The preceding6992 CI batch is green;
 new startup coverage awaits its own CI. No action input or bundle format changes.
+
+The game-blocking cached-static-TLA bug now has an authorized temporary deno_core0.413
+snapshot with the minimal async-graph guard, preserved MIT license and removal TODO.
+Upstream: [issue37097](https://github.com/denoland/deno/issues/37097),
+[draft PR37098](https://github.com/denoland/deno/pull/37098). Native suites pass117 normal/
+116 JITless. Browser coverage now requires23 module checks; integrated CI is still needed.
+CI --build checks propagate Cargo failures, preventing use of a stale cached binary.
+No action inputs, bundle format or privileged game APIs are introduced.

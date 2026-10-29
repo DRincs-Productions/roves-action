@@ -760,3 +760,7 @@ Engine V8 CI adds real Windows module contracts in normal and compiled JITless m
 reusing the existing smoke runner and per-process runtime artifacts. Linux keeps its full
 suite; no action input or bundle output changes. The preceding32d4 required batch is green;
 new Windows runtime verification remains pending its own CI.
+
+Windows V8 CI now shares mach build ANGLE DLL staging before browser execution; missing
+EGL/GLES dependencies fail preparation. This fixes startup coverage without changing
+action inputs or bundle outputs. Positive Windows module results await the corrected CI.

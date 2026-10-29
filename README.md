@@ -764,3 +764,8 @@ new Windows runtime verification remains pending its own CI.
 Windows V8 CI now shares mach build ANGLE DLL staging before browser execution; missing
 EGL/GLES dependencies fail preparation. This fixes startup coverage without changing
 action inputs or bundle outputs. Positive Windows module results await the corrected CI.
+
+The Windows browser jobs now start correctly. Smoke fixture JavaScript/JSON MIME types are
+explicitly defined through Python's standard server extension map, preventing host registry
+associations from serving .mjs as text/plain. The deliberate wrong-MIME rejection remains.
+The actual browser result still awaits corrected CI; Linux and native checks are green.

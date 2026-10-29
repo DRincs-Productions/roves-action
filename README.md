@@ -769,3 +769,8 @@ The Windows browser jobs now start correctly. Smoke fixture JavaScript/JSON MIME
 explicitly defined through Python's standard server extension map, preventing host registry
 associations from serving .mjs as text/plain. The deliberate wrong-MIME rejection remains.
 The actual browser result still awaits corrected CI; Linux and native checks are green.
+
+Module smoke coverage now also records initial static loading separately from modules
+inserted at runtime (22 required checks). Validated startup/timer observations are retained
+in CI summaries without a performance threshold. The preceding6992 CI batch is green;
+new startup coverage awaits its own CI. No action input or bundle format changes.

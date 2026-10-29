@@ -755,3 +755,8 @@ this development artifact does not alter bundle outputs or action inputs.
 
 The engine V8 contributor smoke runner enables existing Servo hard-fail mode for disposable
 processes. This is not a new bundle flag or an input exposed by this action.
+
+Engine V8 CI adds real Windows module contracts in normal and compiled JITless modes,
+reusing the existing smoke runner and per-process runtime artifacts. Linux keeps its full
+suite; no action input or bundle output changes. The preceding32d4 required batch is green;
+new Windows runtime verification remains pending its own CI.

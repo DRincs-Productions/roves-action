@@ -1,6 +1,6 @@
 # Roves GitHub Action
 
-The prebuilt shell and source checkout target Roves **v0.7.13**, including native V8
+The prebuilt shell and source checkout target Roves **v0.7.14**, including native V8
 global-property lookup, worker intrinsic lookup improvements, and safe reporting of
 exceptions without source positions. Whole-game CPU gains are still being measured.
 Action v0.1.9 publishes this pin through the floating `@v0` release alias.

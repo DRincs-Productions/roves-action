@@ -729,7 +729,8 @@ matrix also tests the smoke runner itself: failed assertions, incomplete reports
 skips and missing Window/CSP/navigation checks fail validation. JIT-less Wasm and explicitly
 configured headless device exceptions are documented in the engine architecture wiki.
 This matrix does not change this action's pinned engine or game packaging options. Its
-debug-only V8 heap snapshot diagnostic (one removed-frame capture in Linux engine CI) is not
+debug-only V8 heap snapshot diagnostic (a three-snapshot document-retention series in Linux
+engine CI) is not
 enabled by this action and adds no inputs. Engine-wide
 contributor instructions are in [AGENTS.md](https://github.com/DRincs-Productions/roves/blob/main/AGENTS.md).
 

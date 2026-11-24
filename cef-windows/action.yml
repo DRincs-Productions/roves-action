@@ -1,0 +1,142 @@
+name: 'Package a game on the experimental Roves CEF Windows player'
+description: 'Experimental, Windows only: replace the game of a Roves CEF player package built by the engine CI with your own web build.'
+author: 'DRincs Productions'
+branding:
+  icon: 'package'
+  color: 'purple'
+
+# Standalone sub-action (`uses: DRincs-Productions/roves-action/cef-windows@<ref>`), separate
+# from the root action so the Servo-based packaging path is untouched. Nothing is compiled
+# and there is no release asset to download: the base is the player package uploaded as a
+# workflow artifact by a successful `cef-netrender-probe.yml` run of DRincs-Productions/roves
+# (see ../README.md, "Experimental: CEF Windows player").
+
+inputs:
+  content-dir:
+    description: >-
+      Path (relative to your repo root) to your already-built web content (e.g. dist/), with
+      index.html at its root. It replaces the game\ folder of the base package. Required.
+    required: true
+  base-run-id:
+    description: >-
+      ID of a successful run of the cef-netrender-probe.yml workflow in
+      DRincs-Productions/roves whose player artifact is used as the base. Runs that are not
+      completed with conclusion success are refused. Artifacts expire (plain package 14
+      days, MCP-enabled package 7 days). Required.
+    required: true
+  github-token:
+    description: >-
+      Token used to verify that run and download its artifact. Downloading an artifact of
+      another repository needs a token with actions:read access to DRincs-Productions/roves;
+      the default workflow token usually does not have it.
+    required: false
+    default: ${{ github.token }}
+  enable-mcp:
+    description: >-
+      'true' keeps the player's local MCP development bridge: an AI agent or IDE connected
+      through MCP (Model Context Protocol) can read the running game's state and console, run
+      JavaScript in the page, click, press keys and type. Uses the MCP-enabled artifact of
+      the run and fails if the run has none (dispatch the engine workflow with enable-mcp).
+      Development and playtests only: never ship that package to players. 'false' (default)
+      uses the plain artifact and the output never contains mcp\ (no activation marker, no
+      MCP server).
+    required: false
+    default: 'false'
+  artifact-name:
+    description: 'Base name for the zipped archive and the folder inside it.'
+    required: false
+    default: 'roves-game-cef'
+
+outputs:
+  bundle-dir:
+    description: 'Absolute path to the assembled package directory.'
+    value: ${{ steps.assemble.outputs.bundle-dir }}
+  archive-path:
+    description: 'Absolute path to the zipped archive (<artifact-name>.zip).'
+    value: ${{ steps.assemble.outputs.archive-path }}
+  mcp-enabled:
+    description: "'true' when the package contains the local MCP bridge, otherwise 'false'."
+    value: ${{ inputs.enable-mcp }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        RUN_ID: ${{ inputs.base-run-id }}
+        ENABLE_MCP: ${{ inputs.enable-mcp }}
+      run: |
+        fail=0
+        if [ "${{ runner.os }}" != "Windows" ]; then
+          echo "::error::the CEF Windows player package can only be assembled on a Windows runner (got ${{ runner.os }})"; fail=1
+        fi
+        if ! [[ "$RUN_ID" =~ ^[0-9]+$ ]]; then
+          echo "::error::base-run-id must be the numeric ID of a cef-netrender-probe.yml run (got '$RUN_ID')"; fail=1
+        fi
+        if [ "$ENABLE_MCP" != "true" ] && [ "$ENABLE_MCP" != "false" ]; then
+          echo "::error::enable-mcp must be 'true' or 'false' (got '$ENABLE_MCP')"; fail=1
+        fi
+        exit "$fail"
+
+    - name: Verify the base run and select its artifact
+      id: base
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        RUN_ID: ${{ inputs.base-run-id }}
+        ENABLE_MCP: ${{ inputs.enable-mcp }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $repo = 'DRincs-Productions/roves'
+        $run = gh api "repos/$repo/actions/runs/$env:RUN_ID" | ConvertFrom-Json
+        if ($LASTEXITCODE -ne 0 -or -not $run) { Write-Output "::error::cannot read run $env:RUN_ID of $repo (token without actions:read?)"; exit 1 }
+        if ($run.path -ne '.github/workflows/cef-netrender-probe.yml') { Write-Output "::error::run $env:RUN_ID is a $($run.path) run, not cef-netrender-probe.yml"; exit 1 }
+        if ($run.status -ne 'completed' -or $run.conclusion -ne 'success') {
+          Write-Output "::error::run $env:RUN_ID is $($run.status)/$($run.conclusion); only a successful run is a verified base"; exit 1
+        }
+        $name = if ($env:ENABLE_MCP -eq 'true') { 'visual-novel-template-roves-cef-mcp-windows-x64' } else { 'visual-novel-template-roves-cef-windows-x64' }
+        $artifacts = gh api "repos/$repo/actions/runs/$env:RUN_ID/artifacts?name=$name" | ConvertFrom-Json
+        if ($LASTEXITCODE -ne 0) { Write-Output "::error::cannot list the artifacts of run $env:RUN_ID"; exit 1 }
+        $artifact = @($artifacts.artifacts | Where-Object { -not $_.expired }) | Select-Object -First 1
+        if (-not $artifact) {
+          if ($env:ENABLE_MCP -eq 'true') {
+            Write-Output "::error::run $env:RUN_ID has no (unexpired) MCP-enabled player package: the local MCP bridge is not supported by this base. Use a successful run dispatched with enable-mcp, or set enable-mcp to 'false'."
+          } else {
+            Write-Output "::error::run $env:RUN_ID has no (unexpired) $name artifact"
+          }
+          exit 1
+        }
+        "name=$name" >> $env:GITHUB_OUTPUT
+        "note=$($run.html_url) (commit $($run.head_sha), artifact $name)" >> $env:GITHUB_OUTPUT
+
+    - name: Download the base package
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ steps.base.outputs.name }}
+        repository: DRincs-Productions/roves
+        run-id: ${{ inputs.base-run-id }}
+        github-token: ${{ inputs.github-token }}
+        path: ${{ runner.temp }}/roves-cef-base
+
+    - name: Assemble the package
+      id: assemble
+      shell: pwsh
+      env:
+        CONTENT_DIR: ${{ inputs.content-dir }}
+        ENABLE_MCP: ${{ inputs.enable-mcp }}
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        BASE_NOTE: ${{ steps.base.outputs.note }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $parent = Join-Path $env:RUNNER_TEMP 'roves-cef-output'
+        if (Test-Path -LiteralPath $parent) { Remove-Item -Recurse -Force -LiteralPath $parent }
+        New-Item -ItemType Directory -Force $parent | Out-Null
+        $out = Join-Path $parent $env:ARTIFACT_NAME
+        $content = if ([System.IO.Path]::IsPathRooted($env:CONTENT_DIR)) { $env:CONTENT_DIR } else { Join-Path $env:GITHUB_WORKSPACE $env:CONTENT_DIR }
+        & (Join-Path $env:GITHUB_ACTION_PATH 'assemble.ps1') -BaseDir (Join-Path $env:RUNNER_TEMP 'roves-cef-base') `
+          -ContentDir $content -OutDir $out -EnableMcp $env:ENABLE_MCP -BaseNote $env:BASE_NOTE
+        $zip = Join-Path $parent "$($env:ARTIFACT_NAME).zip"
+        Compress-Archive -LiteralPath $out -DestinationPath $zip -Force
+        "bundle-dir=$out" >> $env:GITHUB_OUTPUT
+        "archive-path=$zip" >> $env:GITHUB_OUTPUT

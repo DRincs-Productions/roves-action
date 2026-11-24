@@ -685,6 +685,49 @@ this action (e.g. `actions/cache` keyed on this action's own version + your lock
 action doesn't do that for you, since the right cache key/scope depends on your own workflow),
 or reconsider whether you actually need advanced mode at all for that particular run.
 
+## Experimental: CEF Windows player
+
+A separate sub-action, `cef-windows/`, packages your game on the experimental CEF + SDL3 +
+wgpu Windows player instead of the Servo-based shell. The root action above is unchanged.
+Nothing is compiled and there is **no release asset** for this player yet: the base is the
+player package a successful `cef-netrender-probe.yml` run of `DRincs-Productions/roves`
+uploaded as a workflow artifact. The sub-action checks that the run completed with
+`success`, downloads its artifact, verifies every file against the package's own
+`SHA256SUMS.txt`, keeps `play.exe`/`play.dll`/the CEF runtime unchanged, replaces `game\`
+with `content-dir` and regenerates `SHA256SUMS.txt` and `PROVENANCE.txt` (`cef-windows/assemble.ps1`).
+
+```yml
+- uses: DRincs-Productions/roves-action/cef-windows@<ref>
+  with:
+    content-dir: dist
+    base-run-id: '<id of a green cef-netrender-probe.yml run>'
+    github-token: ${{ secrets.ROVES_ACTIONS_READ_TOKEN }} # actions:read on DRincs-Productions/roves
+    enable-mcp: 'false' # default
+```
+
+| Input | Default | Meaning |
+| --- | --- | --- |
+| `content-dir` | (required) | Your built web content, `index.html` at its root. |
+| `base-run-id` | (required) | A successful `cef-netrender-probe.yml` run; other runs are refused. Its artifacts expire (14 days, MCP package 7 days). |
+| `github-token` | `github.token` | Reads that run and downloads its artifact; another repository's artifacts need a token with `actions:read` there. |
+| `enable-mcp` | `'false'` | Keep the player's local MCP development bridge (below). |
+| `artifact-name` | `roves-game-cef` | Name of the output folder and zip. |
+
+Outputs: `bundle-dir`, `archive-path`, `mcp-enabled`. Windows runners only.
+
+**Local MCP bridge (`enable-mcp`).** With `'true'`, an AI agent or IDE connected through MCP
+(Model Context Protocol) can read the running game's state and console, run JavaScript in
+the page, click, press keys and type, which is useful for automated playtests. The bridge
+listens only on a local Windows named pipe protected by a per-session token, but any program
+running as the same Windows user can control the game: **development only, never ship that
+package to players**. It uses the run's MCP-enabled artifact
+(`visual-novel-template-roves-cef-mcp-windows-x64`, produced only when the engine workflow is
+dispatched with `enable-mcp`) and fails if the run has none or if that package is
+incomplete; it never adds MCP files itself. With `'false'` the plain artifact is used and the
+output never contains an `mcp\` folder (no `mcp\enabled` activation marker, no MCP server).
+See `support/cef-netrender-probe/mcp/README.md` in the engine repository for connecting a
+client.
+
 ## Tips and Caveats
 
 - Every input is tagged `[servo]` (plain upstream Servo — `mach build`, or `mach bundle`'s

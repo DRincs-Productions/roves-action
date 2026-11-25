@@ -3,7 +3,7 @@
 Resolves, validates and prepares the game's icon for a package, with the Roves icon as the
 fallback. Used by the engine workflow (`cef-netrender-probe.yml`, source of truth:
 support/cef-netrender-probe/packaging/project_icon.py in DRincs-Productions/roves) and, as an
-identical copy, by DRincs-Productions/roves-action `cef-windows/project_icon.py`; Roves Packmaster implements
+identical copy, by DRincs-Productions/roves-action `cef/project_icon.py`; Roves Packmaster implements
 the same rules in Rust (`src-tauri/src/cef_player.rs`). Keep the three in step.
 
 Sources, first match wins (the PNG and the ICO are resolved independently):

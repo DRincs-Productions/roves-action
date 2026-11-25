@@ -1,13 +1,13 @@
 # roves-action
 
-A single composite GitHub Action (`action.yml`) that builds
-[Roves](https://github.com/DRincs-Productions/roves) — a customized Servo fork — and packages
-a game's already-built web content into a native bundle, for any third-party game's own CI.
-See `README.md` for what it actually does today and what it doesn't.
+A single composite GitHub Action (`action.yml`) that packages a game's already-built web
+content as a native [Roves](https://github.com/DRincs-Productions/roves) app for any
+third-party game's own CI: the prebuilt CEF player on Windows/macOS/Linux (downloaded from an
+engine release, nothing compiled), and the engine's native WebView tooling for Android/iOS.
+See `README.md` for what it does today and what it doesn't.
 
-This repo mirrors the engine repo's own `.github/workflows/test.yml` (see this repo's own
-README for that relationship) — it is a separate git repo, not a submodule, checked out as a
-sibling of the engine repo (`../roves` from here) on this machine.
+It is a separate git repo, checked out next to the engine (`../roves`) or as a submodule of
+it on this machine.
 
 ## Standing authorization: autonomous CI/push, and GitHub PAT usage
 
@@ -25,159 +25,85 @@ code change) instead. Never persist it to a file or commit; re-export it fresh i
 command that needs it (env vars don't survive across separate tool calls here); if it starts
 401ing, say so and ask for a fresh one. Full detail in `../roves/AGENTS.md`.
 
-## CRITICAL: keep the pinned engine tag in `action.yml` current
+## CRITICAL: keep the two pinned engine tags in `action.yml` current
 
-There is no `roves-repo`/`roves-ref`/`roves-src-path` input anymore (removed — see the
-"design notes" below for why) — this action always targets `DRincs-Productions/roves` at a
-fixed tag, hardcoded as a literal string in two places in `action.yml`: the "Checkout Roves
-engine source" step's `ref:`, and the "Download prebuilt shell" step's release-asset URL.
-`grep -n 'v0\.' action.yml` finds both. Every consumer of this action builds against exactly
-that tag — it is **not** something that updates itself when the engine cuts a new release.
+There is no `roves-repo`/`roves-ref` input: the action always targets
+`DRincs-Productions/roves` at fixed tags, hardcoded as literals (`grep -n 'v0\.' action.yml`
+finds them; the header comment of `action.yml` names both):
 
-This is the *other side* of an obligation already documented in the engine repo's own
-`CLAUDE.md` ("Cutting a versioned release" → "sync the shell version in `roves-action` and
-`roves-packmaster`"): every time a new engine tag is cut, both literal occurrences here (and the
-version mentioned in `README.md`'s "Base mode" section) must be bumped to point at it, in a
-real commit — not a drive-by edit, since this changes what every consumer of this action gets
-on their next CI run. If you're working in this repo and notice the pinned tag isn't the
-engine's latest release, that's exactly the kind of drift this note exists to catch — fix it
-(a real commit, same care as any other default-changing change), don't assume someone else
-owns it.
+- **DESKTOP PLAYER PIN** (`v0.9.0`): the release URL in the "Download the CEF player
+  (desktop)" step. Every desktop consumer gets exactly those `roves_shell_<platform>[_steam|_mcp].zip`
+  assets. Bump it on every engine release that changes the desktop player, together with the
+  README ("Pin status", the asset table and the intro). Until the pinned release exists, the
+  desktop path (and this repo's desktop CI legs) fails at the download with a clear error.
+- **MOBILE ENGINE PIN** (`v0.7.15`): the `ref:` of "Checkout Roves engine source (mobile)".
+  It must point at an engine tag that still has `mach bundle --android`/`--ios` and
+  `support/ios/bundle.py`; the CEF-era engine has no mach desktop packaging, so do not move
+  this pin to a newer tag without checking that tooling still exists there.
 
-## No more "Fetch tests/wpt/tests/tools" step
+This is the other side of the engine's release obligation ("sync the shell version in
+`roves-action` and `roves-packmaster`"): a new engine tag is invisible here until a real
+commit bumps the matching pin. If you notice drift, fix it.
 
-`action.yml` used to sparse-checkout `tests/wpt/tests/tools/` from upstream `servo/servo`
-because the engine's `mach` imported WPT/tidy tooling on every command. The engine dropped that
-tooling (engine `CUSTOMIZATIONS.md`, 2026-10-14 "Remove unused upstream mach tooling"), so the
-step is gone. Only engine releases that contain that change work without it: the `roves-ref`
-pin must point at such a release.
+## Desktop: design notes
 
-## `advanced-mode`: design notes
+- **One flow for all desktop platforms**: validate -> resolve paths -> download the pinned
+  asset -> resolve the project icon -> assemble -> zip. Nothing is compiled and there are no
+  build-configuration inputs: each platform has one prebuilt configuration, selected only by
+  `steam` and (Windows) `enable-mcp`. Invalid combinations (`enable-mcp` with `steam` or off
+  Windows, desktop inputs with `android`/`ios`) are hard errors in "Validate inputs", never
+  silently ignored.
+- **`cef/assemble.ps1`** (Windows) verifies the asset against its own `SHA256SUMS.txt`, checks
+  MCP completeness, copies the package without the sample game, its provenance, its
+  `icon.png` and (unless `enable-mcp`) `mcp\`, patches `play.exe`'s icon with rcedit, and
+  rewrites `PROVENANCE.txt`/`SHA256SUMS.txt`. Kept in step with Roves Packmaster's
+  `src-tauri/src/cef_player.rs`.
+- **`cef/assemble.sh`** (macOS/Linux) checks the documented files (no checksum list is
+  published for those assets), the Steam redistributable exactly when `steam`, copies the
+  player with `ditto`/`cp -a` (symlinks and modes kept), replaces `game/` and applies the
+  window icon (and on macOS the `.icns` named by `CFBundleIconFile`). It must stay bash
+  3.2-compatible (macOS system bash): no `mapfile`, no empty arrays under `set -u`.
+- **Identical copies of engine scripts**: `cef/project_icon.py` =
+  `support/cef-netrender-probe/packaging/project_icon.py`, `cef/icns.sh` =
+  `support/cef-macos-gate/packaging/icns.sh`. Do not edit them here; change the engine's copy
+  and copy it back (the engine's `test_project_icon.py` runs against this copy unchanged).
+  Pillow 11.3.0 and electron/rcedit v2.0.0 (SHA-256) are pinned as in the engine workflow.
+- **Icon precedence** is the engine's and Packmaster's: game icon first (explicit input, then
+  `icon.png`/`icon.ico`/`favicon.ico` in `content-dir`), Roves icon as the fallback
+  (`roves.ico` in the Windows package; the base `.icns` on macOS; the embedded logo for the
+  window icon when the package has no `icon.png`).
+- **Zipping** keeps what each platform needs: `Compress-Archive` on Windows, `ditto -c -k
+  --keepParent` on macOS (framework symlinks), `zip -qry` on Linux (symlinks; Info-ZIP stores
+  the modes). The root-owned setuid bit of `chrome-sandbox` cannot survive a zip; the README
+  tells users how to restore it.
+- **Paths**: "Resolve paths" emits native absolute paths (`pwd -W` gives `D:/a/...` in Git
+  Bash on Windows) so bash, pwsh, python and mach can all consume them. Input values reach
+  scripts through `env:`, never interpolated into `run:` text.
+- **History**: the desktop path used to download the Servo shell (`roves_shell_*.zip` of
+  v0.7.15) and run `mach bundle --bin`, with an opt-in `advanced-mode` compiling the engine
+  from source; both and all their `[servo]`/desktop `mach bundle` inputs were removed when the
+  engine replaced the Servo desktop shell with the CEF player (README, "Migrating to the CEF
+  player"). The experimental `cef-windows/` sub-action (packaging from a
+  `cef-netrender-probe.yml` workflow artifact) was folded into the root action at the same
+  time: it was never on `main`, and the release asset makes the artifact/token/run-id path
+  unnecessary.
 
-`action.yml` has two entirely different execution paths, both producing the same kind of
-output (a bundled game, ready to zip). Base mode (the default) is deliberately the *easier,
-safer* path — matching Packmaster's own settings surface — with source compilation demoted
-to an explicit, named opt-in for the cases that genuinely need it:
+## Android/iOS: design notes
 
-1. **Base mode** (`advanced-mode: 'false'`, the default, never needs setting explicitly):
-   skip checkout-and-compile entirely. Download the exact same
-   `roves_shell_<platform>[_steam].zip` release asset
-   [Roves Packmaster](https://github.com/DRincs-Productions/roves-packmaster) itself downloads
-   (see that repo's `src-tauri/src/shell.rs`), at this action's own pinned engine tag, and run
-   `mach bundle --bin <extracted binary>` against it — still needs a checkout of the engine's
-   own `python`/`mach` tooling to actually run `mach bundle` (and a small, fast `cargo build`
-   of `support/content-packer`, which `mach bundle` always does regardless of this flag,
-   unless `content-compress: none`), but never compiles the engine itself. This is what makes
-   it fast — no native toolchain (GStreamer, mozjs, ANGLE, ...) needs installing at all, since
-   the downloaded shell already has all of that baked in.
-2. **`advanced-mode: 'true'`**: checkout the engine at that same pinned tag, `mach bootstrap`,
-   `mach build`, `mach bundle`. Slow, but every `mach build` flag (`features`, `target`,
-   `media-stack`, sanitizers, ...) is available, since this is the only path that actually
-   compiles anything.
+**Android** (`android: 'true'`): checkout at the mobile pin, JDK + Android SDK (mirrors the
+engine's `android.yml` at that tag), optional `mach bootstrap`, then `mach bundle --android`.
+Nothing is cross-compiled. `android-release` decodes the keystore secret to a temp file and
+exports the four `APK_SIGNING_*` variables the Gradle project reads.
 
-**Every `mach build`-time input is deliberately incompatible with base mode, and validated as
-a hard error, not silently ignored** (`action.yml`'s "Validate base-mode compatibility"
-step, which runs first, before checkout, so an incompatible combination fails fast): `target`,
-`media-stack`, every sanitizer/debug/`--use-crown`/`--coverage` flag,
-`android`/`ios`/`ohos`/`win-arm64`, `flavor`, `build-params`, `bin`,
-`nightly`, and `features` for anything other than `''`/`'steam'`. These flags exist purely to
-control *how the engine compiles* — meaningless when nothing gets compiled — and a prebuilt
-shell has exactly one fixed build configuration per platform (a `--release` build, the real
-GStreamer media stack, no sanitizers). Silently ignoring one of these would be worse than
-erroring: a consumer setting `features: 'some-experimental-flag'` in base mode and getting a
-bundle that quietly doesn't have that feature is a much worse failure mode than a clear error
-telling them why.
+**iOS** (`ios: 'true'`, macOS runners only) has two modes: `ios-release: 'false'` runs the
+engine's `support/ios/bundle.py` + XcodeGen and builds an unsigned Simulator `.app` into a
+scratch `derivedDataPath` (only the `.app` is copied next to the raw `.xcodeproj`); a real
+device always needs a signing identity. `ios-release: 'true'` goes through `mach bundle
+--ios --ios-release` and returns a signed `.ipa`. `icon-png`/`icon-ico` are rejected with
+`ios` (no icon override there yet).
 
-**`icon-png`/`icon-ico` are deliberately *not* on that incompatible list** — unlike every
-other input above, they stopped being a `mach build`-time (compile-time) concern once the
-engine's own `mach bundle` gained native `--icon-png`/`--icon-ico` support (see the engine
-repo's own CUSTOMIZATIONS.md, "Runtime + post-build game icon" entry): a runtime file copy
-for the window icon, an `rcedit`-based post-build patch for the Windows `.exe`'s own icon
-resource, both applying identically whether `mach bundle` is packaging a freshly-compiled
-binary or the prebuilt shell base mode downloads. Base mode's own "Resolve paths" step
-resolves both to absolute paths and the "mach bundle" step forwards them unconditionally —
-see that step's own comment for why no `runner.os`/`advanced-mode` gating is needed there.
-Leaving either unset isn't the same as "no icon": `mach bundle` itself auto-detects an
-`icon.png`/`icon.ico` sitting directly in `content-dir` first, only falling back to Roves'
-own branding if there's genuinely nothing there (see the engine repo's own CUSTOMIZATIONS.md,
-2026-08-27 entry) — this action doesn't need to do anything extra for that, since it already
-forwards `content-dir` unconditionally and the auto-detect logic lives entirely in `mach
-bundle` itself.
-
-**Why there's no `media-stack: dummy`-equivalent variant for base mode**: `dummy` shows up in
-this action's own example snippets for `advanced-mode: 'true'` specifically to dodge a real CI
-hang — `mach bootstrap`'s GStreamer MSI installer on Windows shells out via a UAC elevation
-prompt that hangs forever with no interactive session (see the engine repo's own
-`release.yml` comments on this same finding). Base mode never runs `mach bootstrap` at all, so
-that hang can't happen there in the first place — the *only* remaining reason to want a
-dummy-media base-mode variant would be a genuinely silent game wanting a smaller download,
-which isn't a case Packmaster itself supports either. Deliberately kept in parity with
-Packmaster (only plain + `_steam` variants exist) rather than adding a third variant to the
-engine's `release.yml` for a benefit nobody's asked for yet.
-
-**If a new `mach build`/`mach bundle` flag is ever added to `action.yml`** (mirroring a new
-engine flag — see the engine repo's own CLAUDE.md, which requires this action be kept in sync
-with the engine's build/bundle CLI surface in the same turn as any such change there): decide
-whether it's a build-time flag (add it to the "Validate base-mode compatibility" step's
-incompatible list) or a bundle-time flag (works in both paths, no validation needed) — don't
-assume; check whether it actually requires the engine to have just been compiled from source,
-the same way every existing entry in that step's list does.
-
-**`ios: 'true'` was originally a third mode alongside base/advanced, entirely outside the
-`mach build`/`mach bundle` flag system** — until 2026-09-14, there was no `mach bundle --ios`
-at all, so this input shelled out directly to the engine's own `support/ios/bundle.py` +
-XcodeGen (`Install XcodeGen`/`iOS bundle` steps in `action.yml`), producing a staged,
-unsigned Xcode project — the consumer finished it in Xcode themselves (pick a team, add
-icons, archive/export an .ipa). **The engine gained `mach bundle --ios`/`--ios-release`
-that same day** (see the engine repo's own CUSTOMIZATIONS.md) — rather than replace the
-existing (working, zero-regression-risk) unsigned path outright, this repo added `ios-release:
-'true'` as a second, additive mode: `ios-release: 'false'` (the default) still behaves exactly
-as described above (raw `.xcodeproj` + unsigned Simulator `.app`, no `mach` involvement);
-`ios-release: 'true'` instead goes through `mach bundle --ios --ios-release` (decoding
-`ios-certificate-p12-base64`/`ios-provisioning-profile-base64` secrets to temp files first,
-same shape as `android-release`'s keystore handling below) and gets back a real, signed `.ipa`
-— no raw project in that mode, since `mach bundle --ios` stages into its own scratch directory,
-not this action's output. Both modes still require `advanced-mode: 'true'` (for the engine
-source checkout either path needs) plus a hard `runner.os == 'macOS'` check (Xcode/XcodeGen
-only exist there — unlike `android`, which dropped its own OS restriction once it stopped
-needing Rust cross-compilation). `icon-png`/`icon-ico` stay incompatible with `ios: 'true'`
-(a real error, not silently ignored) — neither iOS path has icon-override support yet.
-
-**Also built, unsigned, for the iOS Simulator** (`iOS Simulator build` step, `ios-release:
-'false'` only) — unlike Android, there's no such thing as an installable-unsigned build for a
-real *device* at all (an Apple platform rule this action can't work around; Simulator
-specifically needs no signing identity, which is why this is possible without one). Built into
-a scratch `mktemp -d` `-derivedDataPath`, not directly inside the staged project, so only the
-final `.app` gets copied in afterward — copying the whole DerivedData tree into the zip would
-bloat it with intermediate object files/module caches nobody asked for. Both land in the same
-output (`bundle-dir`/`archive-path`), so one zip gives a consumer the Simulator build for an
-immediate look and the real project to actually sign for a device — no new output was added
-for this, unlike `build-android`'s separate `locate built APK` step, since Android's
-`bundle-dir` only ever contained the single `.apk` that mattered.
-
-**Android and iOS release signing are NOT symmetric, despite looking almost identical** (both
-"decode a base64 secret to a temp file, export env vars, add a `--*-release` flag") — an
-Android keystore is self-signed by design, so `android-keystore-base64` can be a real,
-complete, self-generated signing identity. An Apple Distribution certificate must be
-countersigned by Apple itself (an actual Apple Developer Program account, out of this
-action's or the engine's control) — `ios-certificate-p12-base64`/`ios-provisioning-profile-
-base64` always trace back to a human with access to that account; neither this action, the
-engine, nor CI can manufacture a real one end-to-end. Keep this distinction in mind before
-"simplifying" the two to look more alike — the asymmetry is real, not accidental.
-
-**This inverted the action's original default** (compile-from-source, with the prebuilt path
-as an opt-in called `use-prebuilt-shell`) — base mode is now the default and source
-compilation is the named, opt-in `advanced-mode`, on the reasoning that most consumers want
-the same easy, fast path Packmaster itself offers, and should have to deliberately reach for
-the slower, riskier one rather than get it by default. Done before this action had any
-published tag, so no real consumer was ever broken by the flip.
-
-**`roves-repo`/`roves-ref`/`roves-src-path` were later removed as inputs entirely** — this
-action now only ever targets `DRincs-Productions/roves` at its own pinned tag (see the
-"CRITICAL" section above), a hardcoded literal instead of an overridable default. Two real
-capabilities were deliberately given up by this: a consumer can no longer point at a fork
-(`roves-repo`) or, in `advanced-mode: 'true'`, at an unreleased branch/sha (`roves-ref`) to
-test against engine changes ahead of a release. Neither had a known real consumer at the time
-of removal (same "no published tag yet" reasoning as the base/advanced-mode flip above) — if
-that need resurfaces, the input would have to come back rather than being worked around, since
-there's no other way to point this action at something other than its own pinned tag.
+**Android and iOS signing are NOT symmetric**, despite looking alike: an Android keystore is
+self-signed by design, so `android-keystore-base64` can be a complete self-generated identity
+(this repo's CI generates one per run). An Apple Distribution certificate must be
+countersigned by Apple through a real Apple Developer Program account; neither this action
+nor CI can manufacture one. Keep that in mind before "simplifying" the two to look alike.

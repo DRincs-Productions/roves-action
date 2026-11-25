@@ -1,565 +1,449 @@
 name: 'Build & bundle a Roves game'
-description: 'Bundle your web content into a native desktop app using Roves, a Servo-based embedded game shell.'
+description: 'Package your built web game as a native Roves app: the CEF player on Windows/macOS/Linux, WebView on Android/iOS.'
 author: 'DRincs Productions'
 branding:
   icon: 'package'
   color: 'purple'
 
-inputs:
-  # ── Roves engine checkout ──────────────────────────────────────────────────────
-  # No roves-repo/roves-ref/roves-src-path inputs -- this action always targets
-  # DRincs-Productions/roves at a pinned tag, hardcoded as a literal in the "Checkout Roves
-  # engine source" step's `ref:` and the "Download prebuilt shell" step's release URL below
-  # (see this repo's own CLAUDE.md for the obligation to bump both on every new engine
-  # release).
-  advanced-mode:
-    description: >-
-      Advanced mode, at your own risk: instead of downloading the same prebuilt
-      roves_shell_<platform>[_steam].zip release asset Packmaster itself downloads (the
-      default -- same settings as Packmaster, nothing to compile, no native toolchain to
-      install since GStreamer and friends are already baked into the published shell), check
-      out the pinned engine tag's source and build it from source with `mach build`, then
-      `mach bundle --bin <the binary that just produced>` against it. Slower, but every
-      mach-build-time input below (features other than 'steam', target, media-stack,
-      sanitizers, profile selection, bin, nightly, ...) becomes available --
-      those flags exist purely to control *how the engine itself compiles*, which only
-      happens in this mode. Setting any of them to a non-default value while this is 'false'
-      (the default) fails the run with a clear error rather than silently ignoring your input.
-    required: false
-    default: 'false'
-  bootstrap:
-    description: >-
-      Run `mach bootstrap` (installs the native build dependencies mach build/bundle need).
-      Set to 'false' only if you already provisioned them yourself in an earlier step (e.g. to
-      share a cache across multiple calls to this action). Ignored unless advanced-mode
-      is 'true' -- there's nothing to bootstrap for otherwise, since nothing gets compiled.
-    required: false
-    default: 'true'
+# Two engine pins, both hardcoded literals (see CLAUDE.md, "CRITICAL: keep the pinned engine
+# tags current"; `grep -n 'v0\.' action.yml` finds every occurrence):
+#   - DESKTOP PLAYER PIN (v0.9.0): the release whose roves_shell_<platform>[_steam|_mcp].zip
+#     CEF player assets the "Download the CEF player" step fetches. Nothing is compiled.
+#   - MOBILE ENGINE PIN (v0.7.15): the Servo-era engine source checked out for `mach bundle
+#     --android` and the iOS paths ("Checkout Roves engine source (mobile)" step).
 
-  # ── Your game's content ────────────────────────────────────────────────────────
+inputs:
+  # ── Your game ──────────────────────────────────────────────────────────────────────
   content-dir:
     description: >-
       Path (relative to your repo root) to your already-built web content, e.g. a Vite/webpack
-      dist/ folder. Building that content is your own job, before this action — Roves doesn't
-      know or care what bundler/framework produced it. Required.
+      dist/ folder, with index.html at its root. Building it is your own job, before this
+      action. On desktop it replaces the player's game/ folder. Required.
     required: true
   icon-png:
     description: >-
-      Path (relative to your repo root) to a window/taskbar icon (PNG). Works in base mode
-      too (`mach bundle --icon-png`, applied after packaging, no compile needed) — no longer
-      an advanced-mode-only, compile-time input. Not supported on macOS yet (its own Dock/app
-      icon has no runtime override — see the engine's own CUSTOMIZATIONS.md). Omit to keep
-      Roves' own default branding.
+      Path (relative to your repo root) to a square PNG project icon (16 to 2048 px, at most
+      8 MiB). Desktop: the window icon (and the macOS app icon, and the source of play.exe's
+      icon when icon-ico is unset). Android: the launcher icon. Default: content-dir/icon.png,
+      else the largest frame of the project ICO; with no project icon at all the Roves icon
+      is kept. Not supported with ios.
     required: false
     default: ''
   icon-ico:
     description: >-
-      Path (relative to your repo root) to a Windows .exe icon (multi-size .ico). Works in
-      base mode too (`mach bundle --icon-ico`, patches the bundled play.exe's icon resource
-      in place via rcedit, no compile needed). Windows-only; ignored on other platforms.
+      Path (relative to your repo root) to a project .ico. Windows: play.exe's icon. Default:
+      an ICO generated from the resolved PNG, else content-dir/icon.ico or favicon.ico, else
+      the Roves icon. On macOS/Linux only used as the window icon source when no PNG exists.
+      An explicit invalid icon fails the run; an invalid file found in content-dir is a
+      warning. Not supported with android or ios.
     required: false
     default: ''
+
+  # ── Desktop: the CEF player (Windows/macOS/Linux) ─────────────────────────────────────
+  steam:
+    description: >-
+      'true' packages the Steam variant of the player (roves_shell_<platform>_steam.zip:
+      steam_api64.dll / libsteam_api.dylib / libsteam_api.so next to the executable). Desktop
+      only. Steam missing at run time is never fatal.
+    required: false
+    default: 'false'
+  enable-mcp:
+    description: >-
+      Windows only. 'true' packages the MCP-enabled development player
+      (roves_shell_windows_mcp.zip): an AI agent or IDE connected through MCP (Model Context
+      Protocol) can read the running game's state and console, run JavaScript in the page,
+      click, press keys and type. Development and playtests only: never ship that package to
+      players. Cannot be combined with steam. 'false' (default): the output never contains
+      mcp\ (no activation marker, no MCP server).
+    required: false
+    default: 'false'
+
+  # ── Android (WebView, engine pinned at v0.7.15) ──────────────────────────────────────
+  android:
+    description: >-
+      [roves] Package this game as a native Android WebView APK instead of a desktop package,
+      through the engine's `mach bundle --android` (nothing is compiled; needs a JDK and the
+      Android SDK, which this action installs). Early/experimental: debug .apk unless
+      android-release is 'true'.
+    required: false
+    default: 'false'
+  bootstrap:
+    description: >-
+      Android only: run `mach bootstrap` before `mach bundle --android`. Set to 'false' only if
+      you already provisioned its dependencies yourself in an earlier step.
+    required: false
+    default: 'true'
   android-app-name:
     description: >-
-      [roves] `--android-app-name <NAME>`: override the Android app's launcher label. Requires
-      `android: 'true'`. Defaults to content-dir's own manifest.webmanifest/manifest.json/
-      site.webmanifest `short_name` (falling back to `name`), or Roves' own default label if
-      neither the manifest nor this input provide one.
+      [roves] `--android-app-name <NAME>`: the Android launcher label. Requires android. Default:
+      content-dir's manifest.webmanifest/manifest.json/site.webmanifest `short_name` (else
+      `name`), else Roves' default label.
     required: false
     default: ''
   android-orientation:
     description: >-
-      [roves] `--android-orientation <VALUE>`: override the Android app's locked screen
-      orientation (standard web app manifest `orientation` vocabulary: any, natural,
-      landscape, landscape-primary, landscape-secondary, portrait, portrait-primary,
-      portrait-secondary). Requires `android: 'true'`. Defaults to content-dir's own manifest
-      `orientation` field, or unlocked (OS/sensor decides) if neither the manifest nor this
-      input set one.
+      [roves] `--android-orientation <VALUE>`: locked screen orientation (web app manifest
+      vocabulary: any, natural, landscape, landscape-primary, landscape-secondary, portrait,
+      portrait-primary, portrait-secondary). Requires android. Default: the manifest's
+      `orientation`, else unlocked.
     required: false
     default: ''
   android-theme-color:
     description: >-
-      [roves] `--android-theme-color <COLOR>`: override the Android app's status bar color
-      (e.g. "#ffffff"). Requires `android: 'true'`. Defaults to content-dir's own manifest
-      `theme_color` field, or leaves the status bar at its normal theme color if neither the
-      manifest nor this input set one.
+      [roves] `--android-theme-color <COLOR>`: status bar color (e.g. "#ffffff"). Requires
+      android. Default: the manifest's `theme_color`, else the normal theme color.
     required: false
     default: ''
-
-  # ── `mach build` (stock Servo flags — none of these are Roves-specific) ───────
-  release:
-    description: '[servo] `--release`: optimized build.'
-    required: false
-    default: 'false'
-  dev:
-    description: '[servo] `--dev`: debug build (the default if release/production/profile are all unset).'
-    required: false
-    default: 'false'
-  production:
-    description: '[servo] `--prod`: release build without debug assertions.'
-    required: false
-    default: 'false'
-  profile:
-    description: '[servo] `--profile <NAME>`: build with a custom Cargo profile instead of dev/release/prod.'
-    required: false
-    default: ''
-  target:
-    description: '[servo] `--target <TRIPLE>`: cross-compile target triple. Native desktop builds should leave this empty.'
-    required: false
-    default: ''
-  features:
-    description: '[servo] `--features <LIST>`: extra Cargo features, space-separated (e.g. "steam").'
-    required: false
-    default: ''
-  media-stack:
-    description: '[servo] `--media-stack <gstreamer|dummy>`: media backend. `dummy` avoids needing GStreamer installed at all (no audio/video playback).'
-    required: false
-    default: ''
-  jobs:
-    description: '[servo] `--jobs <N>`: parallel build job count, forwarded to Cargo.'
-    required: false
-    default: ''
-  with-asan:
-    description: '[servo] `--with-asan`: build with AddressSanitizer.'
-    required: false
-    default: 'false'
-  with-tsan:
-    description: '[servo] `--with-tsan`: build with ThreadSanitizer.'
-    required: false
-    default: 'false'
-  with-debug-assertions:
-    description: '[servo] `--with-debug-assertions`: keep debug assertions in an otherwise-release build.'
-    required: false
-    default: 'false'
-  debug-mozjs:
-    description: '[servo] `--debug-mozjs`: deprecated. Built mozjs (SpiderMonkey) with debug assertions; engine releases that run JavaScript on V8 ignore it.'
-    required: false
-    default: 'false'
-  with-frame-pointer:
-    description: '[servo] `--with-frame-pointer`: enable frame pointers (background hang monitor).'
-    required: false
-    default: 'false'
-  use-crown:
-    description: "[servo] `--use-crown`: enable Servo's `crown` JS-GC lint tool."
-    required: false
-    default: 'false'
-  coverage:
-    description: '[servo] `--coverage`: build with code-coverage instrumentation (also affects which binary `mach bundle` looks for).'
-    required: false
-    default: 'false'
-  android:
-    description: >-
-      [roves] Package this game as a native Android WebView APK instead of a desktop bundle.
-      Doesn't compile Servo or the Rust engine at all as of the engine's 2026-09-13 mobile
-      pivot to native WebView (Android WebView/iOS WKWebView instead of Servo) — see the
-      engine repo's own `support/MOBILE.md`/CUSTOMIZATIONS.md. Still requires
-      `advanced-mode: 'true'` (this needs an engine source checkout for `mach bundle`'s own
-      Python tooling and the Android Gradle project, even though nothing gets cross-compiled),
-      but no longer needs the NDK, and no longer needs a Linux/macOS runner specifically.
-      Early/experimental — debug .apk only, no prebuilt Android shell is published to
-      download, see the engine README's "Supported platforms" table.
-    required: false
-    default: 'false'
   android-release:
     description: >-
-      [servo] `--android-release`: build a real, signed release .apk instead of the default
-      debug one. Requires `android: 'true'` and all four `android-keystore-*` inputs below —
-      fails clearly rather than silently falling back to a debug-signed "release" build.
+      [roves] `--android-release`: a real, signed release .apk instead of the debug one.
+      Requires android and all four android-keystore-*/android-key-* inputs; fails rather than
+      falling back to a debug-signed build.
     required: false
     default: 'false'
   android-keystore-base64:
     description: >-
-      [roves] Base64-encoded Android release keystore (e.g. `base64 -w0 your.keystore`),
-      typically stored as a GitHub secret. Decoded to a temporary file and passed to `mach
-      bundle` as `APK_SIGNING_KEY_STORE_PATH`. Requires `android-release: 'true'`.
+      [roves] Base64-encoded Android release keystore (`base64 -w0 your.keystore`), typically
+      a secret. Decoded to a temporary file and passed as `APK_SIGNING_KEY_STORE_PATH`.
+      Requires android-release.
     required: false
     default: ''
   android-keystore-password:
-    description: '[roves] The keystore''s store password, passed through as `APK_SIGNING_KEY_STORE_PASS`. Requires `android-release: ''true''`.'
+    description: '[roves] The keystore''s store password (`APK_SIGNING_KEY_STORE_PASS`). Requires android-release.'
     required: false
     default: ''
   android-key-alias:
-    description: '[roves] The signing key''s alias inside the keystore, passed through as `APK_SIGNING_KEY_ALIAS`. Requires `android-release: ''true''`.'
+    description: '[roves] The signing key''s alias (`APK_SIGNING_KEY_ALIAS`). Requires android-release.'
     required: false
     default: ''
   android-key-password:
-    description: '[roves] The signing key''s own password, passed through as `APK_SIGNING_KEY_PASS`. Requires `android-release: ''true''`.'
+    description: '[roves] The signing key''s password (`APK_SIGNING_KEY_PASS`). Requires android-release.'
     required: false
     default: ''
+
+  # ── iOS (WKWebView, engine pinned at v0.7.15, macOS runners only) ─────────────────────
   ios:
     description: >-
-      [roves] Package this game as a staged Xcode project instead of a desktop bundle. By
-      default (`ios-release: 'false'`) this still shells out directly to the engine's
-      `support/ios/bundle.py` + XcodeGen, exactly as before, producing both the raw,
-      ready-to-open .xcodeproj (to finish yourself in Xcode — pick a team, add icons,
-      archive/export) and an unsigned iOS Simulator build for an immediate look without
-      touching Xcode. Set `ios-release: 'true'` (plus the `ios-certificate-*`/
-      `ios-provisioning-profile-*`/`ios-team-id` inputs below) to instead go through the
-      engine's `mach bundle --ios --ios-release` and get back a real, signed .ipa — see that
-      input's own description. Requires `advanced-mode: 'true'` (for the engine source
-      checkout both paths need) and a macOS runner (Xcode/XcodeGen requirement) — fails
-      clearly otherwise rather than silently producing nothing. `icon-png`/`icon-ico` aren't
-      supported with `ios: 'true'` yet (neither path has icon-override support). Early/
-      experimental — see the engine README's "Supported platforms" table.
+      [roves] Package this game for iOS instead of a desktop package. Default (ios-release
+      'false'): the engine's support/ios/bundle.py + XcodeGen produce a ready-to-open
+      .xcodeproj plus an unsigned iOS Simulator build. With ios-release 'true': a signed .ipa
+      through `mach bundle --ios --ios-release`. macOS runners only; icon-png/icon-ico are not
+      supported. Early/experimental.
     required: false
     default: 'false'
   ios-app-name:
-    description: >-
-      [roves] The app's display name — `bundle.py --app-name <NAME>` (unsigned path) or
-      `mach bundle --ios-app-name <NAME>` (`ios-release: 'true'`). Requires `ios: 'true'`.
-      Defaults to "Roves Game" — unlike `android-app-name`, this doesn't yet fall back to
-      your content's own web manifest.
+    description: '[roves] The app''s display name (default "Roves Game"). Requires ios.'
     required: false
     default: ''
   ios-bundle-id:
-    description: >-
-      [roves] The app's bundle identifier (e.g. com.example.mygame) — `bundle.py --bundle-id`
-      (unsigned path) or `mach bundle --ios-bundle-id` (`ios-release: 'true'`). Requires
-      `ios: 'true'`. Defaults to "org.roves.game".
+    description: '[roves] The app''s bundle identifier, e.g. com.example.mygame (default "org.roves.game"). Requires ios.'
     required: false
     default: ''
   ios-release:
     description: >-
-      [servo] `--ios-release`: archive and export a real, signed .ipa instead of the default
-      unsigned Simulator build — goes through `mach bundle --ios --ios-release` instead of the
-      standalone `bundle.py`/XcodeGen/xcodebuild path `ios: 'true'` otherwise uses (see that
-      input's own description), so you no longer get the raw .xcodeproj back, just the signed
-      .ipa. Requires `ios: 'true'` and all four `ios-certificate-*`/`ios-provisioning-profile-*`/
-      `ios-team-id` inputs below — fails clearly rather than silently producing an unsigned
-      build.
+      [roves] `--ios-release`: archive and export a real, signed .ipa instead of the unsigned
+      Simulator build (no raw .xcodeproj in that mode). Requires ios plus
+      ios-certificate-p12-base64, ios-provisioning-profile-base64 and ios-team-id.
     required: false
     default: 'false'
   ios-certificate-p12-base64:
     description: >-
-      [roves] Base64-encoded Apple Distribution certificate + private key, exported as a
-      .p12 (e.g. `base64 -w0 distribution.p12`), typically stored as a GitHub secret. Decoded
-      to a temporary file and passed to `mach bundle` as `IOS_SIGNING_CERTIFICATE_P12_PATH`.
-      This must be a real certificate from your own Apple Developer Program account — Apple
-      itself must countersign it, nothing this action or the engine does can produce one.
-      Requires `ios-release: 'true'`.
+      [roves] Base64-encoded Apple Distribution certificate + private key (.p12), typically a
+      secret, from your own Apple Developer Program account (passed as
+      `IOS_SIGNING_CERTIFICATE_P12_PATH`). Requires ios-release.
     required: false
     default: ''
   ios-certificate-p12-password:
-    description: '[roves] The .p12''s export password, passed through as `IOS_SIGNING_CERTIFICATE_P12_PASSWORD`. Requires `ios-release: ''true''`.'
+    description: '[roves] The .p12''s export password (`IOS_SIGNING_CERTIFICATE_P12_PASSWORD`). Requires ios-release.'
     required: false
     default: ''
   ios-provisioning-profile-base64:
     description: >-
-      [roves] Base64-encoded `.mobileprovision` matching the certificate above and your app's
-      bundle ID, downloaded from your Apple Developer Program account. Decoded to a temporary
-      file and passed to `mach bundle` as `IOS_SIGNING_PROVISIONING_PROFILE_PATH`. Requires
-      `ios-release: 'true'`.
+      [roves] Base64-encoded .mobileprovision matching the certificate and bundle ID (passed as
+      `IOS_SIGNING_PROVISIONING_PROFILE_PATH`). Requires ios-release.
     required: false
     default: ''
   ios-team-id:
-    description: '[roves] Your Apple Developer Program Team ID, passed through as `IOS_SIGNING_TEAM_ID`. Requires `ios-release: ''true''`.'
-    required: false
-    default: ''
-  win-arm64:
-    description: '[servo] `--win-arm64`: use the arm64 Windows target instead of x64.'
-    required: false
-    default: 'false'
-  flavor:
-    description: '[servo] `--flavor <NAME>`: Gradle/Hvigor product flavor, Android/OpenHarmony packaging only.'
-    required: false
-    default: ''
-  verbose:
-    description: '[servo] `--verbose`: verbose build output.'
-    required: false
-    default: 'false'
-  very-verbose:
-    description: '[servo] `--very-verbose`: very verbose build output (also dumps build env vars).'
-    required: false
-    default: 'false'
-  no-package:
-    description: '[servo] `--no-package`: Android only — skip packaging into a .apk after building.'
-    required: false
-    default: 'false'
-  build-params:
-    description: '[servo] Extra passthrough arguments appended verbatim to `mach build`, space-separated.'
+    description: '[roves] Your Apple Developer Program Team ID (`IOS_SIGNING_TEAM_ID`). Requires ios-release.'
     required: false
     default: ''
 
-  # ── `mach bundle` (Roves-added command — no upstream Servo equivalent) ────────
-  html-file:
-    description: '[roves] `--html-file <PATH>`: entry html file, relative to --content-dir.'
-    required: false
-    default: 'index.html'
-  window-size:
-    description: '[roves] `--window-size <WxH>`: initial window size.'
-    required: false
-    default: '1280x720'
+  # ── Packaging (this action's own convention) ──────────────────────────────────────────
   output:
     description: >-
-      [roves] `--output <DIR>`: where mach bundle writes the packaged game, relative to your
-      repo root. Defaults to a path this action controls (and exposes via the `bundle-dir`
-      output) so it can reliably find and zip it afterward.
+      Where the package is assembled, relative to your repo root (replaced if it exists).
+      Defaults to roves-bundle-output; it is renamed to artifact-name before zipping, see the
+      bundle-dir output.
     required: false
     default: ''
-  content-compress:
-    description: '[roves] `--content-compress <auto|none>`: pack content into tar+zstd archives (auto, the default) or copy it in as loose files (none).'
-    required: false
-    default: 'auto'
-  content-compression-level:
-    description: '[roves] `--content-compression-level <N>`: zstd level used by content-compress=auto.'
-    required: false
-    default: '1'
-  content-max-pack-size:
-    description: '[roves] `--content-max-pack-size <SIZE>`: max size per content archive before splitting (e.g. 500M, 1G).'
-    required: false
-    default: '500M'
-  content-exclude:
-    description: >-
-      [roves] `--content-exclude <GLOB>`: globs (relative to --content-dir) of files to leave
-      loose/uncompressed instead of packing, one per line for more than one.
-    required: false
-    default: ''
-  content-boot-include:
-    description: >-
-      [roves] `--content-boot-include <GLOB>`: globs (relative to --content-dir), one per line
-      for more than one, of extra files to force into the eager boot set.
-    required: false
-    default: ''
-  deb:
-    description: '[roves] `--deb`: build an installable .deb instead of the default self-contained binary. Linux only.'
-    required: false
-    default: 'false'
-  msi:
-    description: >-
-      [roves] `--msi`: build an installable .msi instead of the default self-contained
-      play.exe bundle. Windows only. Requires the WiX Toolset's `candle`/`light` on PATH —
-      the windows-latest GitHub-hosted runner ships these pre-installed but not on PATH by
-      default (add `%WIX%\bin` yourself, e.g. via a `pwsh` step, before this action).
-    required: false
-    default: 'false'
-  dmg:
-    description: >-
-      [roves] `--dmg`: wrap the default play.app bundle in an installable .dmg disk image
-      instead of shipping the .app on its own. macOS only.
-    required: false
-    default: 'false'
-  package-name:
-    description: >-
-      [roves] `--package-name <NAME>`: package name to use with deb/msi/dmg. Ignored unless
-      one of those is true.
-    required: false
-    default: 'roves'
-  package-version:
-    description: >-
-      [roves] `--package-version <VERSION>`: package version to use with deb/msi/dmg.
-      Ignored unless one of those is true. For msi specifically, must be 1-4 dot-separated
-      integers (0-65535 each, e.g. "1.2.3") — an MSI file-format constraint; `mach bundle`
-      raises a clear error otherwise.
-    required: false
-    default: '0.0.0'
-  diagnostic-script:
-    description: >-
-      [roves] `--diagnostic-script`: ship a diagnose.bat/diagnose.sh alongside the bundle
-      (portable/msi/dmg only, not deb) that launches the game from a console and prints its
-      exit code plus roves.log inline — for testers to run when a build appears to do
-      nothing. Off by default: a real release has no reason to carry this debug tooling
-      unasked.
-    required: false
-    default: 'false'
-  bin:
-    description: '[servo] `--bin <PATH>`: explicit path to the servoshell binary to bundle, bypassing auto-resolution from the build-profile flags above.'
-    required: false
-    default: ''
-  nightly:
-    description: '[servo] `--nightly <YYYY-MM-DD>`: bundle a dated nightly build instead of a just-built binary.'
-    required: false
-    default: ''
-  bundle-params:
-    description: '[roves] Extra launch arguments baked into the bundle (passed to servoshell every time the shipped game starts), space-separated.'
-    required: false
-    default: ''
-
-  # ── Packaging (this action's own convention, not a mach flag) ─────────────────
   artifact-name:
     description: >-
       Base name for the zipped archive and the folder inside it (e.g. "my-game" produces
-      my-game.zip containing a my-game/ folder) — see DRincs-Productions/roves's
-      CUSTOMIZATIONS.md on why the bundle is always named-folder-then-zipped, never zipped at
-      the archive root.
+      my-game.zip containing a my-game/ folder).
     required: false
     default: 'roves-game'
 
 outputs:
   bundle-dir:
-    description: 'Absolute path to the unzipped bundle output directory.'
+    description: 'Absolute path to the unzipped package folder (named artifact-name).'
     value: ${{ steps.package.outputs.bundle-dir }}
   archive-path:
     description: 'Absolute path to the zipped archive (<artifact-name>.zip).'
     value: ${{ steps.package.outputs.archive-path }}
+  mcp-enabled:
+    description: "'true' when the package contains the local MCP bridge (Windows, enable-mcp), otherwise 'false'."
+    value: ${{ steps.validate.outputs.mcp }}
+  icon-source:
+    description: "Desktop only: where the icons came from, e.g. 'window project (game icon.png 512x512); executable project (ICO generated from game icon.png)'."
+    value: ${{ steps.icon.outputs.summary }}
 
 runs:
   using: 'composite'
   steps:
-    - name: Validate base-mode compatibility (advanced-mode != 'true')
-      if: inputs.advanced-mode != 'true'
+    - name: Validate inputs
+      id: validate
       shell: bash
+      env:
+        STEAM: ${{ inputs.steam }}
+        ENABLE_MCP: ${{ inputs.enable-mcp }}
+        ANDROID: ${{ inputs.android }}
+        IOS: ${{ inputs.ios }}
+        BOOTSTRAP: ${{ inputs.bootstrap }}
+        ANDROID_RELEASE: ${{ inputs.android-release }}
+        IOS_RELEASE: ${{ inputs.ios-release }}
+        ICON_PNG: ${{ inputs.icon-png }}
+        ICON_ICO: ${{ inputs.icon-ico }}
+        ANDROID_OPTIONS: ${{ inputs.android-app-name != '' || inputs.android-orientation != '' || inputs.android-theme-color != '' }}
+        IOS_OPTIONS: ${{ inputs.ios-app-name != '' || inputs.ios-bundle-id != '' }}
+        ANDROID_SIGNING: ${{ inputs.android-keystore-base64 != '' && inputs.android-keystore-password != '' && inputs.android-key-alias != '' && inputs.android-key-password != '' }}
+        IOS_SIGNING: ${{ inputs.ios-certificate-p12-base64 != '' && inputs.ios-provisioning-profile-base64 != '' && inputs.ios-team-id != '' }}
       run: |
-        set -euo pipefail
+        set -uo pipefail
         fail=0
-        check() {
-          local name="$1" value="$2" default_desc="$3"
-          if [ "$value" != "$4" ]; then
-            echo "::error::'$name' (got '$value') needs advanced-mode: 'true' -- the default, base mode downloads a prebuilt shell with a fixed build configuration, and this flag only controls how the engine *compiles*, which doesn't happen in that mode. Leave '$name' at $default_desc, or set advanced-mode to 'true' to compile from source with this input instead."
-            fail=1
+        err() { echo "::error::$*"; fail=1; }
+        for pair in "steam=$STEAM" "enable-mcp=$ENABLE_MCP" "android=$ANDROID" "ios=$IOS" "bootstrap=$BOOTSTRAP" \
+          "android-release=$ANDROID_RELEASE" "ios-release=$IOS_RELEASE"; do
+          case "${pair#*=}" in true|false) ;; *) err "${pair%%=*} must be 'true' or 'false' (got '${pair#*=}')" ;; esac
+        done
+        if [ "$ANDROID" = true ] && [ "$IOS" = true ]; then
+          err "android and ios can't both be 'true': run this action once per platform"
+        fi
+        if [ "$ANDROID" != true ] && [ "$ANDROID_OPTIONS" = true ]; then err "android-app-name/android-orientation/android-theme-color require android: 'true'"; fi
+        if [ "$IOS" != true ] && [ "$IOS_OPTIONS" = true ]; then err "ios-app-name/ios-bundle-id require ios: 'true'"; fi
+        if [ "$ANDROID_RELEASE" = true ] && { [ "$ANDROID" != true ] || [ "$ANDROID_SIGNING" != true ]; }; then
+          err "android-release: 'true' requires android: 'true' plus android-keystore-base64, android-keystore-password, android-key-alias and android-key-password -- no debug-signed fallback"
+        fi
+        if [ "$IOS_RELEASE" = true ] && { [ "$IOS" != true ] || [ "$IOS_SIGNING" != true ]; }; then
+          err "ios-release: 'true' requires ios: 'true' plus ios-certificate-p12-base64, ios-provisioning-profile-base64 and ios-team-id (and ios-certificate-p12-password unless the .p12 has none)"
+        fi
+        mcp=false
+        if [ "$ANDROID" = true ] || [ "$IOS" = true ]; then
+          mode=$([ "$ANDROID" = true ] && echo android || echo ios)
+          if [ "$STEAM" = true ] || [ "$ENABLE_MCP" = true ]; then err "steam/enable-mcp apply to the desktop CEF player only, not to $mode"; fi
+          if [ -n "$ICON_ICO" ]; then err "icon-ico is not supported with $mode (Android uses icon-png)"; fi
+          if [ "$IOS" = true ] && [ -n "$ICON_PNG" ]; then err "icon-png is not supported with ios yet: add your icon in Xcode"; fi
+          if [ "$IOS" = true ] && [ "$RUNNER_OS" != macOS ]; then err "ios: 'true' requires a macOS runner (got $RUNNER_OS): Xcode and XcodeGen only exist there"; fi
+        else
+          mode=desktop
+          case "$RUNNER_OS" in
+            Windows) platform=windows ;; macOS) platform=macos ;; Linux) platform=linux ;;
+            *) err "unsupported runner OS $RUNNER_OS"; platform=unknown ;;
+          esac
+          suffix=''
+          [ "$STEAM" = true ] && suffix=_steam
+          if [ "$ENABLE_MCP" = true ]; then
+            if [ "$RUNNER_OS" != Windows ]; then err "enable-mcp: the local MCP bridge exists only in the Windows player (got $RUNNER_OS)"; fi
+            if [ "$STEAM" = true ]; then err "enable-mcp and steam can't be combined: no Steam package with the MCP bridge is published"; fi
+            suffix=_mcp mcp=true
           fi
-        }
-        if [ -n "${{ inputs.features }}" ] && [ "${{ inputs.features }}" != "steam" ]; then
-          echo "::error::base mode (advanced-mode != 'true') only supports features='' or features='steam' (got '${{ inputs.features }}') -- only a plain and a Steam-enabled shell variant are published."
-          fail=1
+          echo "platform=$platform" >> "$GITHUB_OUTPUT"
+          echo "asset=roves_shell_${platform}${suffix}.zip" >> "$GITHUB_OUTPUT"
         fi
-        check target "${{ inputs.target }}" "unset" ""
-        check media-stack "${{ inputs.media-stack }}" "unset" ""
-        check jobs "${{ inputs.jobs }}" "unset" ""
-        check with-asan "${{ inputs.with-asan }}" "'false'" "false"
-        check with-tsan "${{ inputs.with-tsan }}" "'false'" "false"
-        check with-debug-assertions "${{ inputs.with-debug-assertions }}" "'false'" "false"
-        check debug-mozjs "${{ inputs.debug-mozjs }}" "'false'" "false"
-        check with-frame-pointer "${{ inputs.with-frame-pointer }}" "'false'" "false"
-        check use-crown "${{ inputs.use-crown }}" "'false'" "false"
-        check coverage "${{ inputs.coverage }}" "'false'" "false"
-        check android "${{ inputs.android }}" "'false'" "false"
-        check ios "${{ inputs.ios }}" "'false'" "false"
-        check win-arm64 "${{ inputs.win-arm64 }}" "'false'" "false"
-        check flavor "${{ inputs.flavor }}" "unset" ""
-        check build-params "${{ inputs.build-params }}" "unset" ""
-        check bin "${{ inputs.bin }}" "unset" ""
-        check nightly "${{ inputs.nightly }}" "unset" ""
-        if [ "$fail" = "1" ]; then
-          exit 1
-        fi
+        echo "mode=$mode" >> "$GITHUB_OUTPUT"
+        echo "mcp=$mcp" >> "$GITHUB_OUTPUT"
+        exit "$fail"
 
-    # Unlike icon-png/icon-ico (which apply to every platform `mach bundle` supports and so
-    # were deliberately left off the base-mode incompatibility check above), these three are
-    # meaningless without android='true' — a desktop bundle has no launcher label/screen
-    # orientation/status bar to set. This runs regardless of advanced-mode/base mode, since
-    # it's checking a different thing than that step (whether these inputs make sense at all
-    # for the target platform, not whether the engine was compiled from source).
-    - name: Validate android-* bundle inputs require android='true'
-      if: inputs.android != 'true' && (inputs.android-app-name != '' || inputs.android-orientation != '' || inputs.android-theme-color != '')
-      shell: bash
-      run: |
-        echo "::error::android-app-name/android-orientation/android-theme-color require android: 'true' -- they configure the Android app's launcher label/screen orientation/status bar, which don't exist on a desktop bundle."
-        exit 1
-
-    - name: Validate ios-* bundle inputs require ios='true'
-      if: inputs.ios != 'true' && (inputs.ios-app-name != '' || inputs.ios-bundle-id != '')
-      shell: bash
-      run: |
-        echo "::error::ios-app-name/ios-bundle-id require ios: 'true' -- they configure the staged Xcode project's display name/bundle identifier, which don't exist on a desktop bundle."
-        exit 1
-
-    - name: Validate android-release requires android='true' and all 4 keystore inputs
-      if: inputs.android-release == 'true' && (inputs.android != 'true' || inputs.android-keystore-base64 == '' || inputs.android-keystore-password == '' || inputs.android-key-alias == '' || inputs.android-key-password == '')
-      shell: bash
-      run: |
-        echo "::error::android-release: 'true' requires android: 'true' plus all four android-keystore-base64/android-keystore-password/android-key-alias/android-key-password inputs -- without a real signing identity there's no way to produce a signed release .apk, and this fails loudly rather than silently falling back to a debug-signed one."
-        exit 1
-
-    - name: Validate ios-release requires ios='true' and all 4 signing inputs
-      if: inputs.ios-release == 'true' && (inputs.ios != 'true' || inputs.ios-certificate-p12-base64 == '' || inputs.ios-provisioning-profile-base64 == '' || inputs.ios-team-id == '')
-      shell: bash
-      run: |
-        echo "::error::ios-release: 'true' requires ios: 'true' plus ios-certificate-p12-base64, ios-provisioning-profile-base64 and ios-team-id (ios-certificate-p12-password too, unless your .p12 genuinely has no password) -- without a real Apple Distribution identity there's no way to produce a signed .ipa."
-        exit 1
-
-    - name: Validate android and ios aren't both set
-      if: inputs.android == 'true' && inputs.ios == 'true'
-      shell: bash
-      run: |
-        echo "::error::android and ios can't both be 'true' in the same run -- each produces a completely different bundle kind (an APK vs. a staged Xcode project). Run this action twice, once per platform, if you need both."
-        exit 1
-
-    - name: Validate ios runs on a macOS runner
-      if: inputs.ios == 'true' && runner.os != 'macOS'
-      shell: bash
-      run: |
-        echo "::error::ios: 'true' requires a macOS runner (got runner.os='${{ runner.os }}') -- XcodeGen and Xcode itself only exist there. Run this leg of your matrix on macos-latest."
-        exit 1
-
-    - name: Validate ios doesn't combine with icon-png/icon-ico (not supported by bundle.py yet)
-      if: inputs.ios == 'true' && (inputs.icon-png != '' || inputs.icon-ico != '')
-      shell: bash
-      run: |
-        echo "::error::icon-png/icon-ico aren't supported with ios: 'true' yet -- the engine's support/ios/bundle.py has no icon-override support today, unlike the Android/desktop paths. Add your icon directly in Xcode after this action stages the project."
-        exit 1
-
-    - name: Resolve paths (content-dir/icons are relative to your repo, not the engine checkout)
+    # Native absolute paths (`pwd -W` gives D:/a/... in Git Bash on Windows), usable from bash,
+    # pwsh, python and mach alike.
+    - name: Resolve paths
       id: paths
       shell: bash
+      env:
+        CONTENT_DIR: ${{ inputs.content-dir }}
+        ICON_PNG: ${{ inputs.icon-png }}
+        ICON_ICO: ${{ inputs.icon-ico }}
+        OUTPUT: ${{ inputs.output }}
       run: |
         set -euo pipefail
-        content_dir_abs="$(cd "${{ inputs.content-dir }}" && pwd)"
-        echo "content-dir-abs=$content_dir_abs" >> "$GITHUB_OUTPUT"
+        abs() { (cd "$1" && { pwd -W 2>/dev/null || pwd; }); }
+        file_abs() { echo "$(abs "$(dirname "$1")")/$(basename "$1")"; }
+        content="$(abs "$CONTENT_DIR")"
+        if [ ! -f "$content/index.html" ]; then echo "::error::content-dir $CONTENT_DIR has no index.html at its root"; exit 1; fi
+        echo "content-dir-abs=$content" >> "$GITHUB_OUTPUT"
+        [ -n "$ICON_PNG" ] && echo "icon-png-abs=$(file_abs "$ICON_PNG")" >> "$GITHUB_OUTPUT"
+        [ -n "$ICON_ICO" ] && echo "icon-ico-abs=$(file_abs "$ICON_ICO")" >> "$GITHUB_OUTPUT"
+        # The leaf never pre-exists: assemble.ps1, assemble.sh and support/ios/bundle.py
+        # create it themselves (mach bundle replaces it anyway).
+        out="${OUTPUT:-roves-bundle-output}"
+        mkdir -p "$(dirname "$out")"
+        out="$(file_abs "$out")"
+        rm -rf "$out"
+        echo "output-abs=$out" >> "$GITHUB_OUTPUT"
+        echo "temp=$(abs "$RUNNER_TEMP")" >> "$GITHUB_OUTPUT"
+        echo "roves-src-abs=$(abs "$GITHUB_WORKSPACE")/roves-src" >> "$GITHUB_OUTPUT"
 
-        if [ -n "${{ inputs.icon-png }}" ]; then
-          echo "icon-png-abs=$(cd "$(dirname "${{ inputs.icon-png }}")" && pwd)/$(basename "${{ inputs.icon-png }}")" >> "$GITHUB_OUTPUT"
+    # ── Desktop: download the pinned CEF player and put the game in it ───────────────────
+    # DESKTOP PLAYER PIN: v0.9.0 in the URL below. Until that release is published the
+    # download fails with a clear error (this repo's own desktop CI jobs fail with it too).
+    - name: Download the CEF player (desktop)
+      id: base
+      if: steps.validate.outputs.mode == 'desktop'
+      shell: bash
+      env:
+        ASSET: ${{ steps.validate.outputs.asset }}
+        TEMP_DIR: ${{ steps.paths.outputs.temp }}
+      run: |
+        set -euo pipefail
+        url="https://github.com/DRincs-Productions/roves/releases/download/v0.9.0/$ASSET"
+        zip="$TEMP_DIR/roves-cef-base.zip"
+        base="$TEMP_DIR/roves-cef-base"
+        rm -rf "$base" "$zip"
+        mkdir -p "$base"
+        echo "Downloading $url"
+        if ! curl -fSL --retry 5 --retry-delay 5 --retry-all-errors "$url" -o "$zip"; then
+          echo "::error::cannot download $url (is the pinned Roves release v0.9.0 published with $ASSET?)"
+          exit 1
         fi
-        if [ -n "${{ inputs.icon-ico }}" ]; then
-          echo "icon-ico-abs=$(cd "$(dirname "${{ inputs.icon-ico }}")" && pwd)/$(basename "${{ inputs.icon-ico }}")" >> "$GITHUB_OUTPUT"
-        fi
+        # Extractors that keep what the asset stores: ditto keeps the .app's symlinks and
+        # modes, Info-ZIP unzip keeps the Linux execute bits.
+        case "$RUNNER_OS" in
+          Windows) ZIP="$zip" DEST="$base" pwsh -NoProfile -Command 'Expand-Archive -LiteralPath $env:ZIP -DestinationPath $env:DEST -Force' ;;
+          macOS) ditto -x -k "$zip" "$base" ;;
+          Linux) unzip -q "$zip" -d "$base" ;;
+        esac
+        rm -f "$zip"
+        echo "dir=$base" >> "$GITHUB_OUTPUT"
+        echo "note=$url" >> "$GITHUB_OUTPUT"
 
-        # ios='true' is the one exception to always pre-creating --output: support/ios/
-        # bundle.py refuses to run if its own --output already exists (it's meant to create
-        # a brand new directory, mirroring its CLI's own documented usage) -- so this only
-        # resolves the absolute path via the *parent* directory here, leaving the leaf itself
-        # for bundle.py's own "iOS bundle" step below to create.
-        if [ -n "${{ inputs.output }}" ]; then
-          if [ "${{ inputs.ios }}" = "true" ]; then
-            mkdir -p "$(dirname "${{ inputs.output }}")"
-            output_abs="$(cd "$(dirname "${{ inputs.output }}")" && pwd)/$(basename "${{ inputs.output }}")"
-          else
-            mkdir -p "${{ inputs.output }}"
-            output_abs="$(cd "${{ inputs.output }}" && pwd)"
+    # Project icon contract (engine support/cef-netrender-probe/README.md, "Project icon"):
+    # cef/project_icon.py is an identical copy of the engine's script and resolves the same
+    # sources on every platform (game icon first, Roves icon as the fallback); Pillow and
+    # electron/rcedit are pinned exactly as in the engine workflow.
+    - name: Set up Python (project icon, desktop)
+      if: steps.validate.outputs.mode == 'desktop'
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Resolve the project icon (desktop)
+      id: icon
+      if: steps.validate.outputs.mode == 'desktop'
+      shell: bash
+      env:
+        CONTENT: ${{ steps.paths.outputs.content-dir-abs }}
+        ICON_PNG: ${{ steps.paths.outputs.icon-png-abs }}
+        ICON_ICO: ${{ steps.paths.outputs.icon-ico-abs }}
+        TEMP_DIR: ${{ steps.paths.outputs.temp }}
+        BASE: ${{ steps.base.outputs.dir }}
+      run: |
+        set -euo pipefail
+        tools="$TEMP_DIR/roves-cef-icon"
+        rm -rf "$tools"
+        mkdir -p "$tools"
+        python -m pip install --disable-pip-version-check --only-binary=:all: 'pillow==11.3.0'
+        rcedit='' fallback=''
+        if [ "$RUNNER_OS" = Windows ]; then
+          rcedit="$tools/rcedit-x64.exe"
+          curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors -o "$rcedit" \
+            https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe
+          hash="$(sha256sum "$rcedit" | cut -d' ' -f1)"
+          if [ "$hash" != 3e7801db1a5edbec91b49a24a094aad776cb4515488ea5a4ca2289c400eade2a ]; then
+            echo "::error::rcedit-x64.exe SHA-256 $hash does not match the pin"; exit 1
           fi
-        else
-          output_abs="${{ github.workspace }}/roves-bundle-output"
-          [ "${{ inputs.ios }}" != "true" ] && mkdir -p "$output_abs"
+          # The player's own Roves icon, used for play.exe when the game has none.
+          for candidate in "$BASE/roves.ico" "$BASE"/*/roves.ico; do
+            if [ -f "$candidate" ] && [ -f "$(dirname "$candidate")/play.exe" ]; then fallback="$candidate"; break; fi
+          done
         fi
-        echo "output-abs=$output_abs" >> "$GITHUB_OUTPUT"
+        python -I "$GITHUB_ACTION_PATH/cef/project_icon.py" --content "$CONTENT" --out "$tools/resolved" \
+          --icon-png "$ICON_PNG" --icon-ico "$ICON_ICO" --fallback-ico "$fallback"
+        while IFS='=' read -r key value; do
+          case "$key" in
+            window_source) ws="$value" ;; window_detail) wd="$value" ;;
+            exe_source) es="$value" ;; exe_detail) ed="$value" ;;
+          esac
+        done < "$tools/resolved/result.env"
+        summary="window $ws ($wd)"
+        # play.ico only matters on Windows; elsewhere the window PNG is the whole contract.
+        [ "$RUNNER_OS" = Windows ] && summary="$summary; executable $es ($ed)"
+        echo "dir=$tools/resolved" >> "$GITHUB_OUTPUT"
+        echo "rcedit=$rcedit" >> "$GITHUB_OUTPUT"
+        echo "summary=$summary" >> "$GITHUB_OUTPUT"
 
-        roves_src_abs="${{ github.workspace }}/roves-src"
-        echo "roves-src-abs=$roves_src_abs" >> "$GITHUB_OUTPUT"
+    - name: Assemble the CEF player package (Windows)
+      if: steps.validate.outputs.mode == 'desktop' && runner.os == 'Windows'
+      shell: pwsh
+      env:
+        BASE: ${{ steps.base.outputs.dir }}
+        BASE_NOTE: ${{ steps.base.outputs.note }}
+        CONTENT: ${{ steps.paths.outputs.content-dir-abs }}
+        OUT: ${{ steps.paths.outputs.output-abs }}
+        ENABLE_MCP: ${{ inputs.enable-mcp }}
+        STEAM: ${{ inputs.steam }}
+        ICON_DIR: ${{ steps.icon.outputs.dir }}
+        RCEDIT: ${{ steps.icon.outputs.rcedit }}
+        ICON_NOTE: ${{ steps.icon.outputs.summary }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        & (Join-Path $env:GITHUB_ACTION_PATH 'cef/assemble.ps1') -BaseDir $env:BASE -ContentDir $env:CONTENT `
+          -OutDir $env:OUT -EnableMcp $env:ENABLE_MCP -BaseNote $env:BASE_NOTE `
+          -IconDir $env:ICON_DIR -Rcedit $env:RCEDIT -IconNote $env:ICON_NOTE
+        $steamDll = Test-Path -LiteralPath (Join-Path $env:OUT 'steam_api64.dll') -PathType Leaf
+        if ($steamDll -ne ($env:STEAM -eq 'true')) { throw "steam is '$env:STEAM' but the package $(if ($steamDll) { 'contains' } else { 'lacks' }) steam_api64.dll" }
 
-    - name: Checkout Roves engine source
+    - name: Assemble the CEF player package (macOS/Linux)
+      if: steps.validate.outputs.mode == 'desktop' && runner.os != 'Windows'
+      shell: bash
+      env:
+        PLATFORM: ${{ steps.validate.outputs.platform }}
+        BASE: ${{ steps.base.outputs.dir }}
+        CONTENT: ${{ steps.paths.outputs.content-dir-abs }}
+        OUT: ${{ steps.paths.outputs.output-abs }}
+        STEAM: ${{ inputs.steam }}
+        ICON_DIR: ${{ steps.icon.outputs.dir }}
+      run: bash "$GITHUB_ACTION_PATH/cef/assemble.sh" "$PLATFORM" "$BASE" "$CONTENT" "$OUT" "$STEAM" "$ICON_DIR"
+
+    # ── Android/iOS: the Servo-era engine's mobile tooling ────────────────────────────────
+    # MOBILE ENGINE PIN: v0.7.15. That tag still has `mach bundle --android`/`--ios` and
+    # support/ios/bundle.py; the desktop pin above has no mach desktop packaging at all.
+    - name: Checkout Roves engine source (mobile)
+      if: steps.validate.outputs.mode != 'desktop'
       uses: actions/checkout@v4
       with:
         repository: DRincs-Productions/roves
         ref: v0.7.15
         path: roves-src
 
-    - name: Setup python (mach needs a consistent python3 across all 3 OSes)
+    - name: Setup python (mach, mobile)
+      if: steps.validate.outputs.mode != 'desktop'
       uses: actions/setup-python@v5
       with:
         python-version: '3.x'
 
-    - name: Setup uv (needed by ./mach — see the engine's own README)
+    - name: Setup uv (needed by ./mach, mobile)
+      if: steps.validate.outputs.mode != 'desktop'
       uses: astral-sh/setup-uv@v5
 
-    - name: Prefetch pinned rust toolchain
+    - name: Prefetch pinned rust toolchain (mobile)
+      if: steps.validate.outputs.mode != 'desktop'
       shell: bash
       working-directory: roves-src
       run: rustup show
 
-    # As of the engine's 2026-09-13 mobile pivot (Servo -> native WebView for Android/iOS,
-    # see the engine repo's own CUSTOMIZATIONS.md, "Mobile pivots from Servo to native
-    # WebView"), `mach bundle --android` no longer compiles anything -- no NDK, no Rust
-    # cross-compile, no `mach build --android` prerequisite (see `_bundle_android`'s own
-    # doc comment, engine-side). That's why the "mach build" step below now skips itself
-    # for android='true' entirely, and why there's no more Linux/macOS-only Windows
-    # restriction here (that restriction was about Rust cross-compilation, which no longer
-    # happens) or NDK download -- only a JDK + the Android SDK's platform/build-tools are
-    # needed now, for Gradle itself.
-    #
-    # Mirrors the identical setup in the engine repo's own .github/workflows/android.yml --
-    # see that file's own comments for the full reasoning behind each choice below
-    # (cmdline-tools installed fresh rather than trusting whatever's preinstalled, the
-    # platform package version resolved dynamically rather than hardcoded). Keep both in
-    # sync if either ever changes.
+    # `mach bundle --android` compiles nothing (no NDK, no Rust cross-compile): only a JDK and
+    # the Android SDK platform/build-tools are needed, for Gradle. Mirrors the engine's own
+    # .github/workflows/android.yml at the mobile pin (cmdline-tools installed fresh, platform
+    # package resolved dynamically); keep both in sync.
     - name: Install Android SDK cmdline-tools (android='true' only)
       if: inputs.android == 'true'
       shell: bash
@@ -579,9 +463,7 @@ runs:
       if: inputs.android == 'true'
       shell: bash
       env:
-        # support/android/apk/servoapp/build.gradle.kts's `android {}` block, engine-side --
-        # keep in sync with that file (and the engine's own android.yml, which targets the
-        # same values).
+        # support/android/apk/servoapp/build.gradle.kts's `android {}` block at the mobile pin.
         ANDROID_COMPILE_SDK: '37'
         ANDROID_BUILD_TOOLS: '36.0.0'
       run: |
@@ -604,166 +486,89 @@ runs:
         distribution: 'temurin'
         java-version: '17'
 
-    # Windows: mach's own bootstrap shells out to the GStreamer MSI installer via a UAC
-    # elevation prompt, which just hangs forever with no interactive session — skip it with
-    # --skip-platform, safe as long as media-stack=gstreamer isn't actually needed (dummy, the
-    # media-stack default here, needs no native media libraries at all). dpkg-dev is required
-    # for `mach bundle --deb` but isn't installed by mach bootstrap itself.
-    - name: mach bootstrap
-      # Skipped for ios='true' unconditionally, including ios-release='true': `mach bundle
-      # --ios[--ios-release]` never compiles anything (no NDK/GStreamer/Rust involved, just
-      # XcodeGen + xcodebuild) -- there's nothing for bootstrap to install either way.
-      if: inputs.bootstrap == 'true' && inputs.advanced-mode == 'true' && inputs.ios != 'true'
+    # Windows: mach bootstrap's GStreamer MSI installer waits on a UAC prompt forever on a
+    # non-interactive runner, so --skip-platform there.
+    - name: mach bootstrap (android='true' only)
+      if: inputs.android == 'true' && inputs.bootstrap == 'true'
       shell: bash
       working-directory: roves-src
       run: |
         set -euo pipefail
-        if [ "${{ runner.os }}" = "Windows" ]; then
+        if [ "$RUNNER_OS" = "Windows" ]; then
           ./mach bootstrap --force --yes --skip-lints --skip-nextest --skip-platform
         else
           ./mach bootstrap --force --yes --skip-lints --skip-nextest
         fi
-        if [ "${{ runner.os }}" = "Linux" ] && [ "${{ inputs.deb }}" = "true" ]; then
-          sudo apt-get update && sudo apt-get install -y --no-install-recommends dpkg-dev
-        fi
 
-    # `mach bundle --msi` shells out to WiX's candle/light (see the engine's own
-    # post_build_commands.py `_wrap_windows_msi`). The windows-latest GitHub-hosted runner
-    # ships the WiX Toolset pre-installed, with $WIX pointing at its install root, but its
-    # bin/ isn't on PATH by default — a self-hosted/other Windows runner would need WiX
-    # installed some other way before this action, since mach bootstrap doesn't provide it.
-    - name: Add WiX Toolset to PATH (Windows, msi=true only)
-      if: runner.os == 'Windows' && inputs.msi == 'true'
-      shell: pwsh
-      run: echo "$env:WIX\bin" >> $env:GITHUB_PATH
-
-    - name: Download prebuilt shell (base mode, the default)
-      if: inputs.advanced-mode != 'true'
-      id: prebuilt
-      shell: bash
-      run: |
-        set -euo pipefail
-        case "${{ runner.os }}" in
-          Windows) platform=windows; bin_rel=play.exe ;;
-          macOS) platform=macos; bin_rel="play.app/Contents/MacOS/play" ;;
-          Linux) platform=linux; bin_rel=play ;;
-          *) echo "::error::unsupported runner.os for base mode's prebuilt shell download: ${{ runner.os }}"; exit 1 ;;
-        esac
-        suffix=""
-        [ "${{ inputs.features }}" = "steam" ] && suffix="_steam"
-
-        dest="${{ github.workspace }}/roves-prebuilt-shell"
-        mkdir -p "$dest"
-        url="https://github.com/DRincs-Productions/roves/releases/download/v0.7.15/roves_shell_${platform}${suffix}.zip"
-        echo "Downloading $url"
-        curl -fSL --retry 5 --retry-delay 5 --retry-all-errors "$url" -o "$dest/shell.zip"
-
-        # `roves_shell_<platform>.zip`'s single top-level folder is always named `roves`
-        # (release.yml's own PACKAGE_NAME) -- see shell.rs's own comment on the same
-        # convention, Packmaster's side of this exact download.
-        if [ "${{ runner.os }}" = "Windows" ]; then
-          pwsh -NoProfile -Command "Expand-Archive -Path '$dest/shell.zip' -DestinationPath '$dest' -Force"
-        else
-          unzip -q "$dest/shell.zip" -d "$dest"
-        fi
-        rm -f "$dest/shell.zip"
-
-        bin_path="$dest/roves/$bin_rel"
-        if [ ! -e "$bin_path" ]; then
-          echo "::error::expected $bin_path after extracting the prebuilt shell -- actual contents:"
-          find "$dest" >&2
-          exit 1
-        fi
-        chmod +x "$bin_path" 2>/dev/null || true
-        echo "bin-path=$bin_path" >> "$GITHUB_OUTPUT"
-
-    - name: mach build
-      # Skipped for android='true': `mach bundle --android` no longer needs a prior `mach
-      # build` at all as of the engine's 2026-09-13 mobile pivot (see the engine repo's own
-      # CUSTOMIZATIONS.md, "Mobile pivots from Servo to native WebView") -- `_bundle_android`
-      # doesn't compile or look for `libservoshell.so` anymore, it packages the game straight
-      # from source into a Gradle project. Running `mach build --android` here would just
-      # cross-compile a native library nothing in the resulting APK references.
-      if: inputs.advanced-mode == 'true' && inputs.android != 'true' && inputs.ios != 'true'
+    - name: mach bundle --android
+      if: inputs.android == 'true'
       shell: bash
       working-directory: roves-src
+      env:
+        CONTENT: ${{ steps.paths.outputs.content-dir-abs }}
+        OUT: ${{ steps.paths.outputs.output-abs }}
+        ICON_PNG: ${{ steps.paths.outputs.icon-png-abs }}
+        APP_NAME: ${{ inputs.android-app-name }}
+        ORIENTATION: ${{ inputs.android-orientation }}
+        THEME_COLOR: ${{ inputs.android-theme-color }}
+        RELEASE: ${{ inputs.android-release }}
+        KEYSTORE_B64: ${{ inputs.android-keystore-base64 }}
+        KEYSTORE_PASS: ${{ inputs.android-keystore-password }}
+        KEY_ALIAS: ${{ inputs.android-key-alias }}
+        KEY_PASS: ${{ inputs.android-key-password }}
       run: |
         set -euo pipefail
-        args=()
-        [ "${{ inputs.release }}" = "true" ] && args+=(--release)
-        [ "${{ inputs.dev }}" = "true" ] && args+=(--dev)
-        [ "${{ inputs.production }}" = "true" ] && args+=(--prod)
-        [ -n "${{ inputs.profile }}" ] && args+=(--profile "${{ inputs.profile }}")
-        [ -n "${{ inputs.target }}" ] && args+=(--target "${{ inputs.target }}")
-        [ -n "${{ inputs.features }}" ] && args+=(--features ${{ inputs.features }})
-        [ -n "${{ inputs.media-stack }}" ] && args+=(--media-stack "${{ inputs.media-stack }}")
-        [ -n "${{ inputs.jobs }}" ] && args+=(--jobs "${{ inputs.jobs }}")
-        [ "${{ inputs.with-asan }}" = "true" ] && args+=(--with-asan)
-        [ "${{ inputs.with-tsan }}" = "true" ] && args+=(--with-tsan)
-        [ "${{ inputs.with-debug-assertions }}" = "true" ] && args+=(--with-debug-assertions)
-        [ "${{ inputs.debug-mozjs }}" = "true" ] && args+=(--debug-mozjs)
-        [ "${{ inputs.with-frame-pointer }}" = "true" ] && args+=(--with-frame-pointer)
-        [ "${{ inputs.use-crown }}" = "true" ] && args+=(--use-crown)
-        [ "${{ inputs.coverage }}" = "true" ] && args+=(--coverage)
-        [ "${{ inputs.android }}" = "true" ] && args+=(--android)
-        [ "${{ inputs.win-arm64 }}" = "true" ] && args+=(--win-arm64)
-        [ -n "${{ inputs.flavor }}" ] && args+=(--flavor "${{ inputs.flavor }}")
-        [ "${{ inputs.verbose }}" = "true" ] && args+=(--verbose)
-        [ "${{ inputs.very-verbose }}" = "true" ] && args+=(--very-verbose)
-        # android='true' always forces --no-package too, regardless of the no-package input's
-        # own value: the "mach bundle" step below always runs next and does its own Gradle
-        # invocation once the game's real content is available -- letting `mach build`'s
-        # auto-package dispatch run first (see the engine's build_commands.py) would just
-        # build an empty-content .apk via Gradle, then immediately rebuild it again with real
-        # content, for no benefit.
-        if [ "${{ inputs.no-package }}" = "true" ] || [ "${{ inputs.android }}" = "true" ]; then
-          args+=(--no-package)
+        args=(--android --content-dir "$CONTENT" --output "$OUT")
+        [ -n "$ICON_PNG" ] && args+=(--icon-png "$ICON_PNG")
+        [ -n "$APP_NAME" ] && args+=(--android-app-name "$APP_NAME")
+        [ -n "$ORIENTATION" ] && args+=(--android-orientation "$ORIENTATION")
+        [ -n "$THEME_COLOR" ] && args+=(--android-theme-color "$THEME_COLOR")
+        # Release signing: the 4 env vars the Gradle project's getSigningKeyInfo reads.
+        if [ "$RELEASE" = true ]; then
+          keystore="$RUNNER_TEMP/roves-android-release.keystore"
+          trap 'rm -f "$keystore"' EXIT
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$keystore"
+          export APK_SIGNING_KEY_STORE_PATH="$keystore" APK_SIGNING_KEY_STORE_PASS="$KEYSTORE_PASS"
+          export APK_SIGNING_KEY_ALIAS="$KEY_ALIAS" APK_SIGNING_KEY_PASS="$KEY_PASS"
+          args+=(--android-release)
         fi
-
-        echo "./mach build ${args[*]} ${{ inputs.build-params }}"
-        ./mach build "${args[@]}" ${{ inputs.build-params }}
+        echo "./mach bundle ${args[*]}"
+        ./mach bundle "${args[@]}"
 
     - name: Install XcodeGen (ios='true' only)
       if: inputs.ios == 'true'
       shell: bash
       run: brew install xcodegen
 
-    # The default (ios-release != 'true') unsigned path -- a completely separate mechanism
-    # from `mach bundle --ios --ios-release` below (mirrors the engine repo's own
-    # .github/workflows/ios.yml's pre-2026-09-14 staging steps), kept for its own sake: it's
-    # what still gives you the raw, ready-to-open .xcodeproj to finish signing yourself in
-    # Xcode. Skipped when ios-release='true' since that path produces a signed .ipa directly
-    # and doesn't need this at all.
+    # Default iOS path: the raw, ready-to-open .xcodeproj to sign yourself in Xcode.
     - name: iOS bundle (support/ios/bundle.py + xcodegen generate)
       if: inputs.ios == 'true' && inputs.ios-release != 'true'
       shell: bash
+      env:
+        CONTENT: ${{ steps.paths.outputs.content-dir-abs }}
+        OUT: ${{ steps.paths.outputs.output-abs }}
+        SRC: ${{ steps.paths.outputs.roves-src-abs }}
+        APP_NAME: ${{ inputs.ios-app-name }}
+        BUNDLE_ID: ${{ inputs.ios-bundle-id }}
       run: |
         set -euo pipefail
-        args=(
-          --content-dir "${{ steps.paths.outputs.content-dir-abs }}"
-          --output "${{ steps.paths.outputs.output-abs }}"
-        )
-        [ -n "${{ inputs.ios-app-name }}" ] && args+=(--app-name "${{ inputs.ios-app-name }}")
-        [ -n "${{ inputs.ios-bundle-id }}" ] && args+=(--bundle-id "${{ inputs.ios-bundle-id }}")
-        python3 "${{ steps.paths.outputs.roves-src-abs }}/support/ios/bundle.py" "${args[@]}"
-        (cd "${{ steps.paths.outputs.output-abs }}" && xcodegen generate --spec project.json)
+        args=(--content-dir "$CONTENT" --output "$OUT")
+        [ -n "$APP_NAME" ] && args+=(--app-name "$APP_NAME")
+        [ -n "$BUNDLE_ID" ] && args+=(--bundle-id "$BUNDLE_ID")
+        python3 "$SRC/support/ios/bundle.py" "${args[@]}"
+        (cd "$OUT" && xcodegen generate --spec project.json)
 
-    # Unsigned, Simulator-only -- no Apple signing identity exists here, and a real device
-    # needs one no matter what (unlike Android, there's no such thing as an installable
-    # unsigned iOS build; that's an Apple platform rule, not something this action could work
-    # around). Built into a scratch derivedDataPath *outside* output-abs, then only the final
-    # .app is copied in -- copying the whole DerivedData tree in would bloat the zip with
-    # intermediate object files/module caches nobody asked for. Placed alongside the raw
-    # project (App.swift/www/project.json/the .xcodeproj XcodeGen just generated) in the same
-    # output, so one zip gives a consumer both: something to drag straight into Simulator for
-    # a quick look, and the real source to open in Xcode and actually sign for a device.
+    # Unsigned and Simulator-only (a device always needs an Apple signing identity). Built in a
+    # scratch derivedDataPath; only the final .app is copied next to the project.
     - name: iOS Simulator build (unsigned, for a quick look without touching Xcode)
       if: inputs.ios == 'true' && inputs.ios-release != 'true'
       shell: bash
+      env:
+        OUT: ${{ steps.paths.outputs.output-abs }}
       run: |
         set -euo pipefail
         BUILD_DIR="$(mktemp -d)"
-        (cd "${{ steps.paths.outputs.output-abs }}" && \
+        (cd "$OUT" && \
           xcodebuild -project RovesGame.xcodeproj -scheme RovesGame \
             -configuration Debug -sdk iphonesimulator -derivedDataPath "$BUILD_DIR" \
             CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
@@ -774,176 +579,59 @@ runs:
           find "$BUILD_DIR/Build/Products"
           exit 1
         fi
-        cp -r "$APP_PATH" "${{ steps.paths.outputs.output-abs }}/$(basename "$APP_PATH")"
+        cp -R "$APP_PATH" "$OUT/$(basename "$APP_PATH")"
         rm -rf "$BUILD_DIR"
 
-    # ios-release='true' path: a real, signed .ipa via the engine's own `mach bundle --ios
-    # --ios-release` (added 2026-09-14, see the engine repo's own CUSTOMIZATIONS.md) instead
-    # of the unsigned bundle.py/xcodegen/xcodebuild steps above -- those are skipped entirely
-    # in this mode (see their own `if:`). Certificate/profile secrets are decoded to temp
-    # files here rather than passed as raw base64 to `mach bundle` itself, mirroring the
-    # Android keystore handling below.
-    - name: mach bundle --ios --ios-release (decode signing secrets + invoke)
+    # ios-release='true': a signed .ipa through `mach bundle --ios --ios-release`; the secrets
+    # are decoded to temporary files, as for the Android keystore.
+    - name: mach bundle --ios --ios-release
       if: inputs.ios == 'true' && inputs.ios-release == 'true'
       shell: bash
       working-directory: roves-src
+      env:
+        CONTENT: ${{ steps.paths.outputs.content-dir-abs }}
+        OUT: ${{ steps.paths.outputs.output-abs }}
+        APP_NAME: ${{ inputs.ios-app-name }}
+        BUNDLE_ID: ${{ inputs.ios-bundle-id }}
+        CERT_B64: ${{ inputs.ios-certificate-p12-base64 }}
+        PROFILE_B64: ${{ inputs.ios-provisioning-profile-base64 }}
+        IOS_SIGNING_CERTIFICATE_P12_PASSWORD: ${{ inputs.ios-certificate-p12-password }}
+        IOS_SIGNING_TEAM_ID: ${{ inputs.ios-team-id }}
       run: |
         set -euo pipefail
-        cert_path="$RUNNER_TEMP/roves-ios-certificate.p12"
-        profile_path="$RUNNER_TEMP/roves-ios-profile.mobileprovision"
-        echo "${{ inputs.ios-certificate-p12-base64 }}" | base64 --decode > "$cert_path"
-        echo "${{ inputs.ios-provisioning-profile-base64 }}" | base64 --decode > "$profile_path"
-
-        args=(
-          --ios --ios-release
-          --content-dir "${{ steps.paths.outputs.content-dir-abs }}"
-          --output "${{ steps.paths.outputs.output-abs }}"
-        )
-        [ -n "${{ inputs.ios-app-name }}" ] && args+=(--ios-app-name "${{ inputs.ios-app-name }}")
-        [ -n "${{ inputs.ios-bundle-id }}" ] && args+=(--ios-bundle-id "${{ inputs.ios-bundle-id }}")
-
-        export IOS_SIGNING_CERTIFICATE_P12_PATH="$cert_path"
-        export IOS_SIGNING_CERTIFICATE_P12_PASSWORD="${{ inputs.ios-certificate-p12-password }}"
-        export IOS_SIGNING_PROVISIONING_PROFILE_PATH="$profile_path"
-        export IOS_SIGNING_TEAM_ID="${{ inputs.ios-team-id }}"
-
+        export IOS_SIGNING_CERTIFICATE_P12_PATH="$RUNNER_TEMP/roves-ios-certificate.p12"
+        export IOS_SIGNING_PROVISIONING_PROFILE_PATH="$RUNNER_TEMP/roves-ios-profile.mobileprovision"
+        trap 'rm -f "$IOS_SIGNING_CERTIFICATE_P12_PATH" "$IOS_SIGNING_PROVISIONING_PROFILE_PATH"' EXIT
+        printf '%s' "$CERT_B64" | base64 --decode > "$IOS_SIGNING_CERTIFICATE_P12_PATH"
+        printf '%s' "$PROFILE_B64" | base64 --decode > "$IOS_SIGNING_PROVISIONING_PROFILE_PATH"
+        args=(--ios --ios-release --content-dir "$CONTENT" --output "$OUT")
+        [ -n "$APP_NAME" ] && args+=(--ios-app-name "$APP_NAME")
+        [ -n "$BUNDLE_ID" ] && args+=(--ios-bundle-id "$BUNDLE_ID")
         echo "./mach bundle ${args[*]}"
         ./mach bundle "${args[@]}"
-        rm -f "$cert_path" "$profile_path"
 
-    - name: mach bundle
-      if: inputs.ios != 'true'
-      shell: bash
-      working-directory: roves-src
-      run: |
-        set -euo pipefail
-        args=(
-          --content-dir "${{ steps.paths.outputs.content-dir-abs }}"
-          --output "${{ steps.paths.outputs.output-abs }}"
-          --html-file "${{ inputs.html-file }}"
-          --window-size "${{ inputs.window-size }}"
-          --content-compress "${{ inputs.content-compress }}"
-          --content-compression-level "${{ inputs.content-compression-level }}"
-          --content-max-pack-size "${{ inputs.content-max-pack-size }}"
-        )
-        if [ "${{ inputs.advanced-mode }}" != "true" ]; then
-          # No build just happened -- point bundle straight at the extracted download
-          # instead of the usual build-profile-selection flags below, which only exist to
-          # locate a binary `mach build` just produced.
-          args+=(--bin "${{ steps.prebuilt.outputs.bin-path }}")
-        else
-          # Same build-profile-selection flags as `mach build` above — bundle doesn't
-          # rebuild anything, it just needs these to locate the binary that step already
-          # produced.
-          [ "${{ inputs.release }}" = "true" ] && args+=(--release)
-          [ "${{ inputs.dev }}" = "true" ] && args+=(--dev)
-          [ "${{ inputs.production }}" = "true" ] && args+=(--prod)
-          [ -n "${{ inputs.profile }}" ] && args+=(--profile "${{ inputs.profile }}")
-          [ "${{ inputs.with-asan }}" = "true" ] && args+=(--with-asan)
-          [ "${{ inputs.with-tsan }}" = "true" ] && args+=(--with-tsan)
-          [ "${{ inputs.coverage }}" = "true" ] && args+=(--coverage)
-          [ -n "${{ inputs.bin }}" ] && args+=(--bin "${{ inputs.bin }}")
-          [ -n "${{ inputs.nightly }}" ] && args+=(--nightly "${{ inputs.nightly }}")
-          # `mach build`/`mach bundle` are separate `./mach` invocations (separate processes)
-          # -- self.target isn't remembered between them, so bundle needs --android passed
-          # again here too, exactly like the build step above, or it would silently resolve
-          # servo_binary against the host desktop target instead of the just-built .so (see
-          # the engine's post_build_commands.py `bundle` decorator comment for why this needs
-          # --android specifically, not e.g. --target, to also pick the right _bundle_android
-          # code path).
-          [ "${{ inputs.android }}" = "true" ] && args+=(--android)
-        fi
-
-        while IFS= read -r glob; do
-          [ -n "$glob" ] && args+=(--content-exclude "$glob")
-        done <<< "${{ inputs.content-exclude }}"
-        while IFS= read -r glob; do
-          [ -n "$glob" ] && args+=(--content-boot-include "$glob")
-        done <<< "${{ inputs.content-boot-include }}"
-
-        if [ "${{ inputs.deb }}" = "true" ] || [ "${{ inputs.msi }}" = "true" ] || [ "${{ inputs.dmg }}" = "true" ]; then
-          args+=(--package-name "${{ inputs.package-name }}" --package-version "${{ inputs.package-version }}")
-        fi
-        if [ "${{ runner.os }}" = "Linux" ] && [ "${{ inputs.deb }}" = "true" ]; then
-          args+=(--deb)
-        fi
-        if [ "${{ runner.os }}" = "Windows" ] && [ "${{ inputs.msi }}" = "true" ]; then
-          args+=(--msi)
-        fi
-        if [ "${{ runner.os }}" = "macOS" ] && [ "${{ inputs.dmg }}" = "true" ]; then
-          args+=(--dmg)
-        fi
-        [ "${{ inputs.diagnostic-script }}" = "true" ] && args+=(--diagnostic-script)
-        # mach bundle itself decides whether either actually applies (--icon-ico only on
-        # Windows, --icon-png not yet on macOS — see post_build_commands.py), so both are
-        # passed unconditionally whenever set; no need to gate on runner.os here too.
-        [ -n "${{ steps.paths.outputs.icon-png-abs }}" ] && args+=(--icon-png "${{ steps.paths.outputs.icon-png-abs }}")
-        [ -n "${{ steps.paths.outputs.icon-ico-abs }}" ] && args+=(--icon-ico "${{ steps.paths.outputs.icon-ico-abs }}")
-        [ -n "${{ inputs.android-app-name }}" ] && args+=(--android-app-name "${{ inputs.android-app-name }}")
-        [ -n "${{ inputs.android-orientation }}" ] && args+=(--android-orientation "${{ inputs.android-orientation }}")
-        [ -n "${{ inputs.android-theme-color }}" ] && args+=(--android-theme-color "${{ inputs.android-theme-color }}")
-
-        # android-release='true': decode the keystore secret to a temp file and export the
-        # same 4 env vars support/android/apk/buildSrc/src/main/kotlin/Android.kt's
-        # getSigningKeyInfo already reads (upstream, unmodified -- see the engine's own
-        # CUSTOMIZATIONS.md), then add --android-release. Nothing to do here if it's 'false'
-        # (the default) -- --android-release simply isn't added.
-        if [ "${{ inputs.android-release }}" = "true" ]; then
-          keystore_path="$RUNNER_TEMP/roves-android-release.keystore"
-          echo "${{ inputs.android-keystore-base64 }}" | base64 --decode > "$keystore_path"
-          export APK_SIGNING_KEY_STORE_PATH="$keystore_path"
-          export APK_SIGNING_KEY_STORE_PASS="${{ inputs.android-keystore-password }}"
-          export APK_SIGNING_KEY_ALIAS="${{ inputs.android-key-alias }}"
-          export APK_SIGNING_KEY_PASS="${{ inputs.android-key-password }}"
-          args+=(--android-release)
-        fi
-
-        echo "./mach bundle ${args[*]} ${{ inputs.bundle-params }}"
-        # Captures the real exit code and separates stdout/stderr explicitly, instead of
-        # letting `set -e` abort the script the instant this fails, before anything can
-        # report why. Re-added 2026-09-17 after the exact same silent "Bundle written to
-        # ... / Process completed with exit code 1" symptom (first seen and diagnosed as
-        # transient on 2026-09-15, see git history: f65fc19/2696867) reproduced again,
-        # identically, across every base-mode matrix leg on two consecutive attempts. Since
-        # it's now recurred on unrelated days with no functional code change in between,
-        # this diagnostic capture is worth keeping permanently rather than reverting it
-        # again the moment one clean run is seen -- it's zero-cost or the actual bug
-        # resurfaces without any way to see why.
-        set +e
-        ./mach bundle "${args[@]}" ${{ inputs.bundle-params }} >"$RUNNER_TEMP/mach-bundle-stdout.log" 2>"$RUNNER_TEMP/mach-bundle-stderr.log"
-        mach_exit=$?
-        set -e
-        echo "::notice::mach bundle exited with code $mach_exit"
-        echo "=== mach bundle stdout ==="
-        cat "$RUNNER_TEMP/mach-bundle-stdout.log"
-        echo "=== mach bundle stderr ==="
-        cat "$RUNNER_TEMP/mach-bundle-stderr.log"
-        [ "${{ inputs.android-release }}" = "true" ] && rm -f "$RUNNER_TEMP/roves-android-release.keystore"
-        exit "$mach_exit"
-
-    # Renamed to a named subfolder before zipping, rather than zipping the output directory's
-    # contents directly at the archive root — otherwise extracting dumps play.exe/play plus a
-    # pile of loose DLLs/support files straight into whatever folder you extract into instead
-    # of one folder of their own. See DRincs-Productions/roves's CUSTOMIZATIONS.md.
-    - name: Package bundle (zip)
+    # One named folder per archive, never loose files at the archive root. ditto on macOS keeps
+    # the .app's symlinks and modes; zip -y on Linux keeps symlinks, Info-ZIP stores the modes.
+    - name: Package (zip)
       id: package
       shell: bash
+      env:
+        OUT: ${{ steps.paths.outputs.output-abs }}
+        NAME: ${{ inputs.artifact-name }}
       run: |
         set -euo pipefail
-        parent="$(dirname "${{ steps.paths.outputs.output-abs }}")"
-        named="$parent/${{ inputs.artifact-name }}"
-        rm -rf "$named"
-        mv "${{ steps.paths.outputs.output-abs }}" "$named"
-
-        zip_path="$parent/${{ inputs.artifact-name }}.zip"
-        (
-          cd "$parent"
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            pwsh -NoProfile -Command "Compress-Archive -Path '${{ inputs.artifact-name }}' -DestinationPath '${{ inputs.artifact-name }}.zip' -Force"
-          else
-            zip -r "${{ inputs.artifact-name }}.zip" "${{ inputs.artifact-name }}"
-          fi
-        )
-
+        parent="$(dirname "$OUT")"
+        named="$parent/$NAME"
+        if [ "$OUT" != "$named" ]; then
+          rm -rf "$named"
+          mv "$OUT" "$named"
+        fi
+        zip_path="$parent/$NAME.zip"
+        rm -f "$zip_path"
+        case "$RUNNER_OS" in
+          Windows) SRC="$named" ZIP="$zip_path" pwsh -NoProfile -Command 'Compress-Archive -LiteralPath $env:SRC -DestinationPath $env:ZIP -Force' ;;
+          macOS) ditto -c -k --keepParent "$named" "$zip_path" ;;
+          *) (cd "$parent" && zip -qry "$NAME.zip" "$NAME") ;;
+        esac
         echo "bundle-dir=$named" >> "$GITHUB_OUTPUT"
         echo "archive-path=$zip_path" >> "$GITHUB_OUTPUT"

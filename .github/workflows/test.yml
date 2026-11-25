@@ -1,31 +1,21 @@
 name: 'Test this action against a real game (visual-novel-template)'
 
-# End-to-end smoke test for *this action itself* (action.yml), not for the Roves engine --
-# that's already covered by DRincs-Productions/roves's own .github/workflows/test.yml, which
-# this workflow otherwise mirrors (rolling "test" release, ensure-then-upload idiom, retries
-# on upload). Builds DRincs-Productions/visual-novel-template's actual web content (a real
-# Pixi'VN + React + Vite game template, not a synthetic fixture) and runs it through this
-# repo's own action.yml via `uses: ./` -- i.e. whatever is currently pushed to this repo, not
-# the published DRincs-Productions/roves-action@v0 tag -- across every platform/feature
-# combination base mode supports: windows/macos/linux x plain/steam. Every run overwrites the
-# same rolling "test" GitHub Release on *this* repo; it is not versioned and not meant to be
-# depended on (see release.yml for actual action releases).
+# End-to-end smoke test for *this action itself* (action.yml), not for the Roves engine, which
+# has its own CI. Builds DRincs-Productions/visual-novel-template's real web content (Pixi'VN +
+# React + Vite) and runs it through this repo's own action.yml via `uses: ./` -- whatever is
+# currently pushed here, not the published @v0 tag. Every run overwrites the same rolling
+# "test" GitHub Release on *this* repo; it is not versioned (see release.yml for releases).
 #
-# advanced-mode ('true') is mostly NOT covered here: it just checks out the engine and runs
-# mach build/bundle, which the engine repo's own test.yml already exercises exhaustively on
-# every one of its own pushes. What this workflow needs to catch is regressions in this
-# action's *own* composite steps -- input wiring, path resolution, the base-mode-compatibility
-# validation, the prebuilt-shell download/extraction, packaging -- against a real consumer's
-# content. Base mode is the path every real consumer of this action actually takes (see
-# README.md's "Base mode" section), so that's what gets tested on every push here.
+# `build-and-publish` covers the desktop CEF player path: windows/macos/linux x standard/steam
+# plus the Windows MCP development package. It downloads the pinned engine release (v0.9.0,
+# action.yml's DESKTOP PLAYER PIN): UNTIL ROVES v0.9.0 IS PUBLISHED WITH ITS roves_shell_*
+# CEF ASSETS, EVERY LEG OF THAT JOB FAILS AT "Download the CEF player" -- expected, not a
+# regression. After that it checks input wiring, asset verification, the game replacement
+# (byte for byte), Steam/MCP selection, icon resolution and the per-platform zip.
 #
-# The two exceptions are `build-android`/`build-ios` below: both are advanced-mode-only (no
-# prebuilt Android/iOS shell is published for base mode to download -- see action.yml's own
-# `android`/`ios` input descriptions), so they're the two configs base mode can never exercise
-# at all. Separate jobs, not folded into the matrix above: each needs its own platform-specific
-# setup (a JDK + Android SDK, or Xcode/XcodeGen on a macos-latest runner) that the other six
-# configs don't, and each is slow/differently-shaped enough that it shouldn't block/be blocked
-# by them.
+# `build-android`/`build-ios` cover the mobile paths, which still use the engine source at
+# v0.7.15 (action.yml's MOBILE ENGINE PIN) and pass independently of v0.9.0. Separate jobs:
+# each needs its own platform setup (JDK + Android SDK, or Xcode/XcodeGen on macOS).
 
 on:
   push:
@@ -51,13 +41,14 @@ jobs:
           gh release view "$TEST_RELEASE_TAG" 2>/dev/null || \
           gh release create "$TEST_RELEASE_TAG" \
             --title "roves-action end-to-end test build" \
-            --notes "Rolling test build of $TEMPLATE_REPO through this repo's own action.yml (base mode, every platform x plain/steam). Overwritten on every push to main -- not a real release, see release.yml for that. Latest build: commit ${{ github.sha }}." \
+            --notes "Rolling test build of $TEMPLATE_REPO through this repo's own action.yml (CEF player on every desktop platform x standard/steam, Windows MCP, Android, iOS). Overwritten on every push to main -- not a real release, see release.yml for that. Latest build: commit ${{ github.sha }}." \
             --prerelease \
             2>/dev/null || \
           gh release view "$TEST_RELEASE_TAG" > /dev/null
 
-  # ── Build the template's content, run it through ./action.yml, upload per combo ─
+  # ── Desktop CEF player: needs Roves v0.9.0 published (see the top comment) ────────────
   build-and-publish:
+    name: desktop ${{ matrix.os_name }}${{ matrix.suffix }} (needs Roves v0.9.0)
     needs: ensure-test-release
     permissions:
       contents: write
@@ -65,30 +56,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            os_name: windows
-            features: ''
-            suffix: ''
-          - os: windows-latest
-            os_name: windows
-            features: 'steam'
-            suffix: '_steam'
-          - os: macos-latest
-            os_name: macos
-            features: ''
-            suffix: ''
-          - os: macos-latest
-            os_name: macos
-            features: 'steam'
-            suffix: '_steam'
-          - os: ubuntu-latest
-            os_name: linux
-            features: ''
-            suffix: ''
-          - os: ubuntu-latest
-            os_name: linux
-            features: 'steam'
-            suffix: '_steam'
+          - { os: windows-latest, os_name: windows, steam: 'false', mcp: 'false', suffix: '' }
+          - { os: windows-latest, os_name: windows, steam: 'true', mcp: 'false', suffix: '_steam' }
+          - { os: windows-latest, os_name: windows, steam: 'false', mcp: 'true', suffix: '_mcp' }
+          - { os: macos-latest, os_name: macos, steam: 'false', mcp: 'false', suffix: '' }
+          - { os: macos-latest, os_name: macos, steam: 'true', mcp: 'false', suffix: '_steam' }
+          - { os: ubuntu-latest, os_name: linux, steam: 'false', mcp: 'false', suffix: '' }
+          - { os: ubuntu-latest, os_name: linux, steam: 'true', mcp: 'false', suffix: '_steam' }
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -116,13 +90,59 @@ jobs:
           npm install
           npm run build
 
-      - name: build & bundle with this action (base mode)
+      - name: package with this action (CEF player)
         id: roves
         uses: ./
         with:
           content-dir: template/dist
-          features: ${{ matrix.features }}
+          steam: ${{ matrix.steam }}
+          enable-mcp: ${{ matrix.mcp }}
           artifact-name: visual-novel-template_${{ matrix.os_name }}${{ matrix.suffix }}
+
+      # Checks the extracted archive, not just bundle-dir: the game is the template build byte
+      # for byte, Steam/MCP files exist exactly when asked, and the zip kept the Linux execute
+      # bits and the macOS framework symlinks.
+      - name: verify the package
+        shell: bash
+        env:
+          ARCHIVE: ${{ steps.roves.outputs.archive-path }}
+          NAME: visual-novel-template_${{ matrix.os_name }}${{ matrix.suffix }}
+          OS_NAME: ${{ matrix.os_name }}
+          STEAM: ${{ matrix.steam }}
+          MCP: ${{ matrix.mcp }}
+          MCP_OUTPUT: ${{ steps.roves.outputs.mcp-enabled }}
+          ICON_SOURCE: ${{ steps.roves.outputs.icon-source }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          x="$RUNNER_TEMP/verify"
+          rm -rf "$x" && mkdir -p "$x"
+          case "$OS_NAME" in
+            windows)
+              DEST="$x" pwsh -NoProfile -Command 'Expand-Archive -LiteralPath $env:ARCHIVE -DestinationPath $env:DEST'
+              root="$x/$NAME" game="$x/$NAME/game" steam_lib="$x/$NAME/steam_api64.dll" ;;
+            macos)
+              ditto -x -k "$ARCHIVE" "$x"
+              root="$(find "$x/$NAME" -maxdepth 1 -name '*.app')"
+              game="$root/Contents/Resources/game" steam_lib="$root/Contents/MacOS/libsteam_api.dylib"
+              [ -L "$root/Contents/Frameworks/Chromium Embedded Framework.framework/Versions/Current" ] ||
+                [ ! -e "$root/Contents/Frameworks/Chromium Embedded Framework.framework/Versions" ] ||
+                fail "the framework's Versions/Current symlink was not kept" ;;
+            linux)
+              unzip -q "$ARCHIVE" -d "$x"
+              root="$x/$NAME" game="$x/$NAME/game" steam_lib="$x/$NAME/libsteam_api.so"
+              [ -x "$root/chrome-sandbox" ] || fail "chrome-sandbox lost its execute bit" ;;
+          esac
+          diff -r template/dist "$game" || fail "game/ differs from template/dist"
+          if [ "$STEAM" = true ]; then [ -f "$steam_lib" ] || fail "Steam package without $steam_lib"
+          else [ ! -e "$steam_lib" ] || fail "standard package with $steam_lib"; fi
+          [ "$MCP_OUTPUT" = "$MCP" ] || fail "mcp-enabled output is '$MCP_OUTPUT', expected '$MCP'"
+          if [ "$OS_NAME" = windows ]; then
+            [ -f "$root/play.exe" ] && [ -f "$root/SHA256SUMS.txt" ] || fail "play.exe or SHA256SUMS.txt missing"
+            if [ "$MCP" = true ]; then [ -f "$root/mcp/enabled" ] || fail "MCP package without mcp/enabled"
+            else [ ! -e "$root/mcp" ] || fail "standard package with mcp/"; fi
+          fi
+          echo "::notice::package verified (icons: $ICON_SOURCE)"
 
       # Retries: every matrix job uploads to the same "test" release concurrently, and
       # `gh release upload --clobber` (delete-then-reupload) occasionally hits a transient
@@ -141,7 +161,7 @@ jobs:
           done
           exit 1
 
-  # ── Android: one of the two configs base mode can never cover -- see top comment ────────
+  # ── Android (mobile engine pin v0.7.15, independent of v0.9.0) ──────────────────────
   build-android:
     needs: ensure-test-release
     permissions:
@@ -213,12 +233,11 @@ jobs:
             echo "KEYSTORE_B64_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: build & bundle with this action (advanced mode, android, real release signing)
+      - name: build & bundle with this action (android, real release signing)
         id: roves
         uses: ./
         with:
           content-dir: template/dist
-          advanced-mode: 'true'
           android: 'true'
           android-release: 'true'
           android-keystore-base64: ${{ steps.keystore.outputs.base64 }}
@@ -227,7 +246,7 @@ jobs:
           android-key-password: ${{ env.KEYSTORE_PASS }}
           artifact-name: visual-novel-template_android
 
-      # Unlike the base-mode jobs above, uploads the raw .apk under a clean, stable name
+      # Unlike the desktop jobs above, uploads the raw .apk under a clean, stable name
       # instead of the zip `archive-path` output -- an .apk is already the single file that
       # matters here (nothing else in `bundle-dir` needs preserving the way a desktop
       # bundle's exe+DLLs layout does), and a bare .apk is what anyone grabbing this to
@@ -264,7 +283,7 @@ jobs:
           done
           exit 1
 
-  # ── iOS: the other config base mode can never cover -- see this file's own top comment ──
+  # ── iOS (mobile engine pin v0.7.15, independent of v0.9.0) ──────────────────────────
   build-ios:
     needs: ensure-test-release
     permissions:
@@ -292,12 +311,11 @@ jobs:
           npm install
           npm run build
 
-      - name: build & bundle with this action (advanced mode, ios)
+      - name: build & bundle with this action (ios)
         id: roves
         uses: ./
         with:
           content-dir: template/dist
-          advanced-mode: 'true'
           ios: 'true'
           artifact-name: visual-novel-template_ios
 
@@ -305,7 +323,7 @@ jobs:
       # output directory (App.swift/www/roves-brand/Info.plist/project.json, the
       # XcodeGen-generated .xcodeproj, and the built Simulator .app) -- there's no single
       # file that "is" the output the way an .apk is, so this uploads the archive-path zip
-      # this action already produced (same as the base-mode jobs above), just under a clean,
+      # this action already produced (same as the desktop jobs above), just under a clean,
       # stable name instead of one that varies by matrix entry.
       - name: verify a real .xcodeproj and a built .app were both generated
         shell: bash

@@ -1,44 +1,37 @@
 # Roves GitHub Action
 
-The prebuilt shell and source checkout target Roves **v0.7.15**, including native V8
-global-property lookup, worker intrinsic lookup improvements, and safe reporting of
-exceptions without source positions. Whole-game CPU gains are still being measured.
-Action v0.1.9 publishes this pin through the floating `@v0` release alias.
+Packages your already-built web game as a native app with
+[Roves](https://github.com/DRincs-Productions/roves), for any game's own CI:
 
-This GitHub Action packages your already-built web content, using
-[Roves](https://github.com/DRincs-Productions/roves) — a customized Servo fork used as a
-runtime for shipping web-based games as real native apps instead of as a browser tab — into a
-double-click-ready native bundle for macOS, Linux, and Windows: `play.app` / `play` /
-`play.exe`, or a `.deb` on Linux.
+- **Desktop (Windows, macOS, Linux): the Roves CEF player, release v0.9.0.** The action
+  downloads the prebuilt player for the runner's platform, verifies it, puts your game in its
+  `game/` folder, applies your game's icon and zips the result. Nothing is compiled. The
+  standard and Steam variants exist for every platform; Windows also has an opt-in
+  MCP-enabled development package.
+- **Android and iOS (experimental): the native WebView path** of the Roves engine at
+  v0.7.15 (`mach bundle --android`, `support/ios/bundle.py`/`mach bundle --ios`), unchanged.
 
-By default it downloads the same prebuilt shell
-[Roves Packmaster](https://github.com/DRincs-Productions/roves-packmaster) itself uses and
-packs your content into it — same settings surface as Packmaster, no native toolchain to
-install, nothing compiled. Set `advanced-mode: 'true'` to instead check out and compile the
-engine from source with `mach build` + `mach bundle` (see
-[DRincs-Productions/roves](https://github.com/DRincs-Productions/roves)), mirroring that
-repo's own
-[`.github/workflows/test.yml`](https://github.com/DRincs-Productions/roves/blob/main/.github/workflows/test.yml)
-— slower, but every `mach build` flag becomes available, at your own risk. See "Advanced
-mode: compiling from source" below.
+Upgrading from the Servo desktop shell (`advanced-mode`, `features`, `deb`/`msi`/`dmg`,
+content packing, ...)? See [Migrating to the CEF player](#migrating-to-the-cef-player).
+
+> **Pin status:** the desktop path downloads assets of the Roves **v0.9.0** release. Until
+> that release is published, the desktop download fails with a clear error.
 
 ## What this action does *not* do
 
-- **Build your game's own web content.** That's your bundler's job (Vite, webpack, whatever) —
-  run it in a step before this action, then point `content-dir` at the result.
-- **Upload anything anywhere.** This action produces a zipped bundle on disk and exposes its
-  path as an output (`archive-path`) — attaching it to a release, a workflow artifact, an
-  itch.io upload, etc. is your own workflow's job. See the examples below for both the
-  "workflow artifact" and "GitHub Release" flavors.
-- **Cross-compile for consoles.** Desktop (Windows/macOS/Linux) is the only thing that actually
-  works today — run this action on `windows-latest`/`macos-latest`/`ubuntu-latest`, one job per
-  platform. See [Supported platforms](https://github.com/DRincs-Productions/roves#supported-platforms)
-  in the engine's own README.
+- **Build your game's web content.** That's your bundler's job (Vite, webpack, ...): run it
+  in a step before this action, then point `content-dir` at the result (`index.html` at its
+  root).
+- **Upload anything.** It produces a zip on disk and exposes its path as `archive-path`;
+  attaching it to a release, an artifact or a store upload is your workflow's job.
+- **Sign or notarize.** The macOS `.app` is unsigned apart from the linker's ad-hoc
+  signature and not notarized; the Windows `play.exe` is not code-signed.
+- **Cross-build.** Each desktop platform is packaged on its own runner (`windows-latest`,
+  `macos-latest`, `ubuntu-latest`), one job per platform.
 
 ## Example
 
-The most common case: build for all three desktop platforms and upload each as a workflow
-artifact.
+Package all three desktop platforms and upload each as a workflow artifact:
 
 ```yml
 name: bundle
@@ -63,15 +56,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: build game content
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm install && npm run build
+      - run: npm ci && npm run build
 
-      - name: build & bundle with Roves
+      - name: package with Roves
         id: roves
-        uses: DRincs-Productions/roves-action@v0
+        uses: DRincs-Productions/roves-action@v1
         with:
           content-dir: dist
           artifact-name: ${{ matrix.name }}
@@ -84,8 +76,8 @@ jobs:
 
 ## More examples
 
-**Publish to a GitHub Release instead of a workflow artifact** — triggers on a version tag,
-builds all three platforms, and attaches each zip to a release for that tag:
+**Publish to a GitHub Release, with Steam builds too** — triggers on a version tag and
+attaches a standard and a Steam zip per platform:
 
 ```yml
 name: release
@@ -102,458 +94,185 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: windows-latest
-            name: my-game_windows
-          - os: macos-latest
-            name: my-game_macos
-          - os: ubuntu-latest
-            name: my-game_linux
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        steam: ['false', 'true']
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm install && npm run build
+      - run: npm ci && npm run build
 
       - id: roves
-        uses: DRincs-Productions/roves-action@v0
+        uses: DRincs-Productions/roves-action@v1
         with:
           content-dir: dist
-          artifact-name: ${{ matrix.name }}
+          steam: ${{ matrix.steam }}
+          artifact-name: my-game_${{ runner.os }}${{ matrix.steam == 'true' && '_steam' || '' }}
 
       - env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ github.ref_name }}" "${{ steps.roves.outputs.archive-path }}"
 ```
 
-**An installable package instead of the default portable binary** — `deb`/`msi`/`dmg` are
-each specific to their own OS (see "Portable vs. installable packages" below), so a
-multi-platform matrix picks the right one per `os`, plus content packing tuned for a
-save-data folder that shouldn't be compressed:
+**A custom game icon** — optional: an `icon.png` (or `icon.ico`/`favicon.ico`) at the root of
+`content-dir` is picked up automatically, see [Project icon](#project-icon):
 
 ```yml
-- uses: DRincs-Productions/roves-action@v0
+- uses: DRincs-Productions/roves-action@v1
   with:
     content-dir: dist
-    artifact-name: my-game_linux-deb
-    deb: 'true' # msi: 'true' on windows-latest, dmg: 'true' on macos-latest
-    package-name: my-game
-    package-version: ${{ github.ref_name }}
-    content-exclude: |
-      saves/**
-      local-data/**
+    icon-png: assets/icon.png
+    icon-ico: assets/icon.ico # Windows play.exe; generated from icon-png when omitted
 ```
 
-**A custom game icon** — works in the default base mode, no `advanced-mode` needed:
+**A Windows playtest build an AI agent can drive** (never ship it to players, see
+[Local MCP bridge](#local-mcp-bridge-enable-mcp)):
 
 ```yml
-- uses: DRincs-Productions/roves-action@v0
+- uses: DRincs-Productions/roves-action@v1
   with:
     content-dir: dist
-    artifact-name: my-game_windows
-    icon-png: assets/icon.png
-    icon-ico: assets/icon.ico
+    enable-mcp: 'true'
+    artifact-name: my-game_windows_mcp
+```
+
+**An Android APK** (any Linux runner, nothing compiled):
+
+```yml
+- uses: DRincs-Productions/roves-action@v1
+  with:
+    content-dir: dist
+    android: 'true'
+    artifact-name: my-game_android
 ```
 
 ## Usage
 
 ```yml
-- uses: DRincs-Productions/roves-action@v0
+- uses: DRincs-Productions/roves-action@v1
   with:
-    # Advanced mode, at your own risk: instead of downloading the same prebuilt shell
-    # Packmaster itself downloads (the default -- same settings as Packmaster, nothing
-    # compiled), check out the pinned engine tag's source and build it from source with
-    # `mach build` + `mach bundle`. Slower, but every mach-build-time input below (features other
-    # than 'steam', target, media-stack, sanitizers, bin, nightly, ...)
-    # becomes available -- see "Advanced mode: compiling from source" below.
-    #
-    # default: false
-    advanced-mode: false
-
-    # Run `mach bootstrap` (installs the native build dependencies mach build/bundle need).
-    # Set to 'false' only if you already provisioned them yourself in an earlier step (e.g.
-    # to share a cache across multiple calls to this action). Ignored unless advanced-mode
-    # is 'true' -- there's nothing to bootstrap for otherwise, since nothing gets compiled.
-    #
-    # default: true
-    bootstrap: true
-
-    # ── Your game's content ──────────────────────────────────────────────────────
-    # Path (relative to your repo root) to your already-built web content, e.g. a
-    # Vite/webpack dist/ folder. Roves doesn't know or care what produced it.
+    # ── Your game ────────────────────────────────────────────────────────────────
+    # Path (relative to your repo root) to your already-built web content, index.html at
+    # its root. On desktop it replaces the player's game/ folder.
     #
     # required
     content-dir: ''
 
-    # Path (relative to your repo root) to a window/taskbar icon (PNG). Works in either mode
-    # -- mach bundle applies it after packaging, no compile needed. Not supported on macOS
-    # yet (its own Dock/app icon has no runtime override).
+    # Square PNG project icon (16-2048 px, at most 8 MiB). Desktop: window icon, macOS app
+    # icon, and the source of play.exe's icon when icon-ico is unset. Android: launcher
+    # icon. Not supported with ios.
     #
-    # default: auto-detect -- an icon.png sitting directly in content-dir (many bundlers
-    # already emit one there for their own PWA manifest), falling back to Roves' own
-    # branding if there isn't one. Set explicitly to override either.
+    # default: content-dir/icon.png, else the largest frame of the project ICO, else the
+    # Roves icon -- see "Project icon"
     icon-png: ''
 
-    # Path (relative to your repo root) to a Windows .exe icon (multi-size .ico).
-    # Windows-only; ignored on other platforms. Also works in either mode -- mach bundle
-    # patches the bundled play.exe's icon resource in place via rcedit.
+    # Project .ico. Windows: play.exe's icon. macOS/Linux: window icon source when there is
+    # no PNG. Not supported with android or ios.
     #
-    # default: auto-detect -- same as icon-png, but looks for icon.ico in content-dir
+    # default: an ICO generated from the resolved PNG, else content-dir/icon.ico or
+    # favicon.ico, else the Roves icon
     icon-ico: ''
 
-    # Android only (requires android: true below) -- override the app's launcher label.
-    #
-    # default: content-dir's own manifest.webmanifest/manifest.json/site.webmanifest
-    # `short_name` (falling back to `name`), or Roves' own default label
-    android-app-name: ''
-
-    # Android only (requires android: true below) -- override the app's locked screen
-    # orientation. Standard web app manifest vocabulary: any, natural, landscape,
-    # landscape-primary, landscape-secondary, portrait, portrait-primary, portrait-secondary.
-    #
-    # default: content-dir's own manifest `orientation` field, or unlocked (OS/sensor decides)
-    android-orientation: ''
-
-    # Android only (requires android: true below) -- override the app's status bar color
-    # (e.g. "#ffffff").
-    #
-    # default: content-dir's own manifest `theme_color` field, or the normal theme color
-    android-theme-color: ''
-
-    # Build a real, signed release .apk instead of the default debug one (requires
-    # android: true below, plus all four android-keystore-*/android-key-* inputs below --
-    # fails clearly rather than silently falling back to a debug-signed "release" build).
+    # ── Desktop: the CEF player ──────────────────────────────────────────────────
+    # Package the Steam variant (Steam redistributable next to the executable).
     #
     # default: false
-    android-release: false
+    steam: false
 
-    # Base64-encoded Android release keystore (`base64 -w0 your.keystore`), typically a
-    # GitHub secret. Requires android-release: true above.
-    #
-    # default: unset
-    android-keystore-base64: ''
-
-    # The keystore's store password. Requires android-release: true above.
-    #
-    # default: unset
-    android-keystore-password: ''
-
-    # The signing key's alias inside the keystore. Requires android-release: true above.
-    #
-    # default: unset
-    android-key-alias: ''
-
-    # The signing key's own password. Requires android-release: true above.
-    #
-    # default: unset
-    android-key-password: ''
-
-    # iOS only (requires ios: true below) -- the app's display name.
-    #
-    # default: "Roves Game" (unlike android-app-name, this doesn't read your content's own
-    # web manifest yet)
-    ios-app-name: ''
-
-    # iOS only (requires ios: true below) -- the app's bundle identifier
-    # (e.g. com.example.mygame).
-    #
-    # default: "org.roves.game"
-    ios-bundle-id: ''
-
-    # Archive and export a real, signed .ipa instead of the default unsigned Simulator build
-    # (requires ios: true above, plus ios-certificate-p12-base64/ios-provisioning-profile-
-    # base64/ios-team-id below -- fails clearly rather than silently producing an unsigned
-    # build). Goes through a different mechanism than the default (mach bundle --ios
-    # --ios-release instead of bundle.py + XcodeGen + xcodebuild directly), so you get a
-    # signed .ipa back instead of the raw .xcodeproj.
+    # Windows only: package the MCP-enabled development player. Never ship it to players.
+    # Cannot be combined with steam.
     #
     # default: false
-    ios-release: false
+    enable-mcp: false
 
-    # Base64-encoded Apple Distribution certificate + private key, exported as a .p12
-    # (`base64 -w0 distribution.p12`), typically a GitHub secret. Must be a real certificate
-    # from your own Apple Developer Program account -- Apple itself must countersign it,
-    # nothing this action or the engine does can produce one. Requires ios-release: true.
-    #
-    # default: unset
-    ios-certificate-p12-base64: ''
-
-    # The .p12's export password. Requires ios-release: true.
-    #
-    # default: unset
-    ios-certificate-p12-password: ''
-
-    # Base64-encoded .mobileprovision matching the certificate above and your app's bundle
-    # ID, from your Apple Developer Program account. Requires ios-release: true.
-    #
-    # default: unset
-    ios-provisioning-profile-base64: ''
-
-    # Your Apple Developer Program Team ID. Requires ios-release: true.
-    #
-    # default: unset
-    ios-team-id: ''
-
-    # ── `mach build` — plain upstream Servo flags, none of these are Roves-specific ─
-    # Every one of these needs advanced-mode: 'true' -- they only control how the engine
-    # itself compiles, which only happens in that mode. See "Advanced mode: compiling from
-    # source" below.
-
-    # Optimized build ([servo] `--release`).
-    #
-    # default: false
-    release: false
-
-    # Debug build ([servo] `--dev`) — the implicit default if release/production/profile
-    # are all left unset.
-    #
-    # default: false
-    dev: false
-
-    # Release build without debug assertions ([servo] `--prod`).
-    #
-    # default: false
-    production: false
-
-    # Build with a custom Cargo profile instead of dev/release/prod ([servo] `--profile`).
-    #
-    # default: unset
-    profile: ''
-
-    # Cross-compile target triple ([servo] `--target`). Native desktop builds should leave
-    # this empty — see "What this action does not do" above.
-    #
-    # default: unset
-    target: ''
-
-    # Extra Cargo features, space-separated ([servo] `--features`), e.g. "steam".
-    #
-    # default: unset
-    features: ''
-
-    # Media backend ([servo] `--media-stack`, `gstreamer` or `dummy`). `dummy` avoids
-    # needing GStreamer installed at all, at the cost of no audio/video playback.
-    #
-    # default: unset (mach's own default)
-    media-stack: ''
-
-    # Parallel build job count, forwarded to Cargo ([servo] `--jobs`).
-    #
-    # default: unset
-    jobs: ''
-
-    # Build with AddressSanitizer ([servo] `--with-asan`).
-    #
-    # default: false
-    with-asan: false
-
-    # Build with ThreadSanitizer ([servo] `--with-tsan`).
-    #
-    # default: false
-    with-tsan: false
-
-    # Keep debug assertions in an otherwise-release build ([servo] `--with-debug-assertions`).
-    #
-    # default: false
-    with-debug-assertions: false
-
-    # Deprecated ([servo] `--debug-mozjs`): built mozjs (SpiderMonkey) with debug assertions;
-    # ignored by engine releases that run JavaScript on V8.
-    #
-    # default: false
-    debug-mozjs: false
-
-    # Enable frame pointers, for the background hang monitor ([servo] `--with-frame-pointer`).
-    #
-    # default: false
-    with-frame-pointer: false
-
-    # Enable Servo's `crown` JS-GC lint tool ([servo] `--use-crown`).
-    #
-    # default: false
-    use-crown: false
-
-    # Build with code-coverage instrumentation ([servo] `--coverage`) — also affects which
-    # binary `mach bundle` looks for.
-    #
-    # default: false
-    coverage: false
-
-    # Package this game as a native Android WebView APK ([roves]). Doesn't compile Servo or
-    # the Rust engine at all -- as of the engine's 2026-09-13 mobile pivot to native WebView,
-    # this only needs a JDK + the Android SDK's platform/build-tools, no NDK. Still needs
-    # advanced-mode: true (an engine source checkout for mach's own Python tooling and the
-    # Android Gradle project), but works on any runner OS now, not just Linux/macOS. Debug
-    # .apk by default; android-release: true (above) produces a real, signed one instead. No
-    # prebuilt Android shell is published to download — see the engine README's platform
-    # table, and android-app-name/android-orientation/android-theme-color above for the
-    # bundle-time side of this.
+    # ── Android (engine v0.7.15) ─────────────────────────────────────────────────
+    # Package a native Android WebView APK instead of a desktop package.
     #
     # default: false
     android: false
 
-    # Package this game as an iOS app ([roves]). By default (ios-release: false, above),
-    # goes through the engine's support/ios/bundle.py + XcodeGen directly -- not `mach
-    # bundle` -- producing both a staged, ready-to-open .xcodeproj (to finish signing
-    # yourself in Xcode: pick a team, add icons, archive/export) and an unsigned iOS
-    # Simulator build for an immediate look, in the same output. Set ios-release: true
-    # (above) to instead go through the engine's `mach bundle --ios --ios-release` and get
-    # back a real, signed .ipa directly -- no raw .xcodeproj in that mode, since there's
-    # nothing left to finish in Xcode. Either way needs advanced-mode: true (for the engine
-    # source checkout both paths need) and a macOS runner (Xcode/XcodeGen requirement) --
-    # fails clearly on any other runner.os. icon-png/icon-ico aren't supported together with
-    # this yet. Early/experimental -- see the engine README's platform table, and
-    # ios-app-name/ios-bundle-id above for the bundle-time side of this.
+    # Run `mach bootstrap` first (Android only). 'false' if you provisioned it yourself.
+    #
+    # default: true
+    bootstrap: true
+
+    # Launcher label. Requires android.
+    #
+    # default: content-dir's manifest.webmanifest/manifest.json/site.webmanifest
+    # `short_name` (falling back to `name`), or Roves' own default label
+    android-app-name: ''
+
+    # Locked screen orientation (web app manifest vocabulary: any, natural, landscape,
+    # landscape-primary, landscape-secondary, portrait, portrait-primary,
+    # portrait-secondary). Requires android.
+    #
+    # default: the manifest's `orientation`, or unlocked
+    android-orientation: ''
+
+    # Status bar color (e.g. "#ffffff"). Requires android.
+    #
+    # default: the manifest's `theme_color`, or the normal theme color
+    android-theme-color: ''
+
+    # A real, signed release .apk instead of the debug one. Requires android plus the four
+    # inputs below; fails rather than falling back to a debug-signed build.
+    #
+    # default: false
+    android-release: false
+
+    # Base64-encoded release keystore (`base64 -w0 your.keystore`), typically a secret.
+    android-keystore-base64: ''
+    # The keystore's store password.
+    android-keystore-password: ''
+    # The signing key's alias inside the keystore.
+    android-key-alias: ''
+    # The signing key's own password.
+    android-key-password: ''
+
+    # ── iOS (engine v0.7.15, macOS runners only) ─────────────────────────────────
+    # Package for iOS: by default the raw .xcodeproj (support/ios/bundle.py + XcodeGen) plus
+    # an unsigned iOS Simulator build; with ios-release a signed .ipa.
     #
     # default: false
     ios: false
 
-    # Use the arm64 Windows target instead of x64 ([servo] `--win-arm64`).
+    # The app's display name. Requires ios.
+    #
+    # default: "Roves Game"
+    ios-app-name: ''
+
+    # The app's bundle identifier (e.g. com.example.mygame). Requires ios.
+    #
+    # default: "org.roves.game"
+    ios-bundle-id: ''
+
+    # Archive and export a signed .ipa through `mach bundle --ios --ios-release` (no raw
+    # .xcodeproj in that mode). Requires ios plus the signing inputs below.
     #
     # default: false
-    win-arm64: false
+    ios-release: false
 
-    # Gradle/Hvigor product flavor, Android/OpenHarmony packaging only ([servo] `--flavor`).
-    #
-    # default: unset
-    flavor: ''
+    # Base64-encoded Apple Distribution certificate + private key (.p12) from your own Apple
+    # Developer Program account -- Apple must countersign it, nothing here can produce one.
+    ios-certificate-p12-base64: ''
+    # The .p12's export password.
+    ios-certificate-p12-password: ''
+    # Base64-encoded .mobileprovision matching the certificate and bundle ID.
+    ios-provisioning-profile-base64: ''
+    # Your Apple Developer Program Team ID.
+    ios-team-id: ''
 
-    # Verbose build output ([servo] `--verbose`).
+    # ── Packaging ────────────────────────────────────────────────────────────────
+    # Where the package is assembled, relative to your repo root (replaced if it exists);
+    # renamed to artifact-name before zipping.
     #
-    # default: false
-    verbose: false
-
-    # Very verbose build output, also dumps build env vars ([servo] `--very-verbose`).
-    #
-    # default: false
-    very-verbose: false
-
-    # Android only: skip packaging into a .apk after building ([servo] `--no-package`).
-    #
-    # default: false
-    no-package: false
-
-    # Extra passthrough arguments appended verbatim to `mach build`, space-separated.
-    #
-    # default: unset
-    build-params: ''
-
-    # ── `mach bundle` — added by Roves, no upstream Servo equivalent ────────────────
-    # Entry html file, relative to content-dir ([roves] `--html-file`). Defaults to
-    # "index.html", not mach's own "dist/index.html" default — see "Tips and Caveats".
-    #
-    # default: index.html
-    html-file: ''
-
-    # Initial window size ([roves] `--window-size`).
-    #
-    # default: 1280x720
-    window-size: ''
-
-    # Where mach bundle writes the packaged game, relative to your repo root ([roves]
-    # `--output`). Leave unset unless you specifically need to know the path before this
-    # action's own `bundle-dir` output is available.
-    #
-    # default: an action-controlled path, exposed via the `bundle-dir` output
+    # default: roves-bundle-output
     output: ''
 
-    # Pack content into tar+zstd archives, or copy it in as loose files ([roves]
-    # `--content-compress`, `auto` or `none`).
-    #
-    # default: auto
-    content-compress: ''
-
-    # zstd compression level used by content-compress=auto ([roves]
-    # `--content-compression-level`).
-    #
-    # default: 1
-    content-compression-level: ''
-
-    # Max size per content archive before splitting, e.g. 500M, 1G ([roves]
-    # `--content-max-pack-size`).
-    #
-    # default: 500M
-    content-max-pack-size: ''
-
-    # Globs (relative to content-dir) of files to leave loose/uncompressed instead of
-    # packing ([roves] `--content-exclude`, repeatable) — one per line for more than one.
-    #
-    # default: unset
-    content-exclude: ''
-
-    # Globs (relative to content-dir), one per line for more than one, of extra files to
-    # force into the eager boot set ([roves] `--content-boot-include`, repeatable).
-    #
-    # default: unset
-    content-boot-include: ''
-
-    # Build an installable .deb instead of the default self-contained binary ([roves]
-    # `--deb`). Linux only — see "Portable vs. installable packages" below.
-    #
-    # default: false
-    deb: false
-
-    # Build an installable .msi instead of the default self-contained play.exe bundle
-    # ([roves] `--msi`). Windows only. Requires WiX's candle/light on PATH — see "Portable
-    # vs. installable packages" below.
-    #
-    # default: false
-    msi: false
-
-    # Wrap the default play.app bundle in an installable .dmg disk image ([roves] `--dmg`).
-    # macOS only.
-    #
-    # default: false
-    dmg: false
-
-    # Package name to use with deb/msi/dmg ([roves] `--package-name`). Ignored unless one of
-    # those is true.
-    #
-    # default: roves
-    package-name: ''
-
-    # Package version to use with deb/msi/dmg ([roves] `--package-version`). Ignored unless
-    # one of those is true. For msi specifically, must be 1-4 dot-separated integers
-    # (0-65535 each, e.g. "1.2.3") — mach bundle errors clearly otherwise.
-    #
-    # default: 0.0.0
-    package-version: ''
-
-    # Ship a diagnose.bat/diagnose.sh alongside the bundle ([roves] `--diagnostic-script`,
-    # portable/msi/dmg only, not deb) that launches the game from a console and prints its
-    # exit code plus roves.log inline — for testers to run when a build appears to do
-    # nothing. Off by default: a real release has no reason to carry this debug tooling
-    # unasked.
-    #
-    # default: false
-    diagnostic-script: false
-
-    # Explicit path to the servoshell binary to bundle, bypassing auto-resolution from the
-    # build-profile flags above ([servo] `--bin`). Needs advanced-mode: 'true' -- base mode
-    # already points this at the downloaded prebuilt shell itself.
-    #
-    # default: unset
-    bin: ''
-
-    # Bundle a dated nightly build instead of a just-built binary ([servo] `--nightly`,
-    # format YYYY-MM-DD). Needs advanced-mode: 'true', for the same reason as `bin` above.
-    #
-    # default: unset
-    nightly: ''
-
-    # Extra launch arguments baked into the bundle — passed to servoshell every time the
-    # shipped game starts, space-separated.
-    #
-    # default: unset
-    bundle-params: ''
-
-    # ── Packaging — this action's own convention, not a mach flag ───────────────────
-    # Base name for the zipped archive and the folder inside it, e.g. "my-game" produces
-    # my-game.zip containing a my-game/ folder (never zipped at the archive root — see
-    # "Tips and Caveats").
+    # Base name for the zip and the folder inside it: "my-game" gives my-game.zip
+    # containing my-game/.
     #
     # default: roves-game
     artifact-name: ''
@@ -563,213 +282,156 @@ save-data folder that shouldn't be compressed:
 
 | Name | Description |
 | --- | --- |
-| `bundle-dir` | Absolute path to the unzipped bundle folder (named `artifact-name`) |
+| `bundle-dir` | Absolute path to the unzipped package folder (named `artifact-name`) |
 | `archive-path` | Absolute path to `<artifact-name>.zip` |
+| `mcp-enabled` | `'true'` when the package contains the local MCP bridge, else `'false'` |
+| `icon-source` | Desktop: where the icons came from, e.g. `window project (game icon.png 512x512); executable project (ICO generated from game icon.png)` |
 
-## Custom game icon
+## Desktop: the CEF player
 
-`icon-png` sets the window/taskbar icon; `icon-ico` (Windows only) sets the `.exe`'s own icon
-resource — both applied by `mach bundle` itself, after packaging, in either mode (see
-[CUSTOMIZATIONS.md]'s "Runtime + post-build game icon" entry for exactly how). Not supported
-on macOS yet — its own Dock/app icon has no runtime override, and `mach bundle` prints a
-warning and ignores `icon-png` there rather than failing the run.
+The desktop package is the Roves CEF player (Chromium Embedded Framework, SDL3, wgpu) built
+and published by the engine's v0.9.0 release. The action picks the asset from the runner and
+the inputs, downloads it from
+`https://github.com/DRincs-Productions/roves/releases/download/v0.9.0/<asset>` and builds
+your package from it:
 
-Omit either and `mach bundle` auto-detects one instead: if `content-dir` itself contains an
-`icon.png`/`icon.ico`, that's used automatically — many bundlers already emit one there for
-their own PWA manifest, so a game that already has one gets its own icon for free, no input
-needed (see [CUSTOMIZATIONS.md]'s 2026-08-27 entry). Falls back to Roves' own default
-branding only if neither the input nor an auto-detected file exists.
+| Runner | `steam` | `enable-mcp` | Release asset | Your zip contains |
+| --- | --- | --- | --- | --- |
+| Windows (x64) | `false` | `false` | `roves_shell_windows.zip` | `play.exe`, `play.dll`, `libcef.dll` and the CEF runtime, `game\`, `PROVENANCE.txt`, `SHA256SUMS.txt` |
+| Windows (x64) | `true` | `false` | `roves_shell_windows_steam.zip` | the same plus `steam_api64.dll` |
+| Windows (x64) | `false` | `true` | `roves_shell_windows_mcp.zip` | the same plus `mcp\` (development only) |
+| macOS (arm64) | `false` | - | `roves_shell_macos.zip` | `roves-cef-macos-gate.app`, game in `Contents/Resources/game` |
+| macOS (arm64) | `true` | - | `roves_shell_macos_steam.zip` | the same plus `Contents/MacOS/libsteam_api.dylib` |
+| Linux (x64) | `false` | - | `roves_shell_linux.zip` | the executable, `libcef.so`, `chrome-sandbox`, `game/` |
+| Linux (x64) | `true` | - | `roves_shell_linux_steam.zip` | the same plus `libsteam_api.so` |
 
-[CUSTOMIZATIONS.md]: https://github.com/DRincs-Productions/roves/blob/main/CUSTOMIZATIONS.md
+What the action does with it:
 
-## Portable vs. installable packages
+1. **Verify.** Windows: every file against the package's own `SHA256SUMS.txt` (no file
+   missing, changed or unlisted). macOS/Linux: the documented files are present (the `.app`'s
+   executable, the CEF framework and icon; `libcef.so`, `chrome-sandbox` with its execute
+   bit, `icudtl.dat`, `resources.pak`), and the Steam redistributable is present exactly when
+   `steam` is `'true'`. A mismatch fails the run.
+2. **Replace the game.** The sample game is removed and `content-dir` is copied into
+   `game/` unchanged. The engine files are never modified, except for the icons below.
+3. **Apply the project icon** ([Project icon](#project-icon)).
+4. **Windows only:** drop the sample game's provenance, append a "game replaced" note to
+   `PROVENANCE.txt` and regenerate `SHA256SUMS.txt` (`cef/assemble.ps1`).
+5. **Zip** one named folder: `Compress-Archive` on Windows, `ditto` on macOS (keeps the
+   framework symlinks), `zip -y` on Linux (keeps symlinks and execute bits).
 
-By default, on every platform, this action produces a **portable** bundle — no install step.
-Each platform also has one installable alternative, each gated to its own OS the same way
-`deb` already was:
+**Linux sandbox.** Unzipping as a normal user keeps execute bits but not root ownership or the
+setuid bit of `chrome-sandbox`. On hosts that restrict unprivileged user namespaces (Ubuntu
+23.10+ by default) players or your installer must run
+`sudo chown root:root chrome-sandbox && sudo chmod 4755 chrome-sandbox`, otherwise Chromium
+stops with "No usable sandbox!". Run the executable from an X11 session or Xwayland, never as
+root.
 
-| Platform (`runner.os`) | Portable (default) | Installable input |
-| --- | --- | --- |
-| `Linux` | `play` + `.so` deps, flat | `deb: 'true'` → a real `.deb` |
-| `Windows` | `play.exe` + a few DLLs, GStreamer plugins in `lib/` | `msi: 'true'` → a real `.msi` (needs WiX's `candle`/`light` on `PATH` — see the `msi` input's own note and the "Add WiX Toolset to PATH" step this action runs for you when `msi: 'true'` on `windows-latest`) |
-| `macOS` | `play.app` | `dmg: 'true'` → that same `.app`, wrapped in a `.dmg` |
+**macOS.** The `.app` is not notarized: Gatekeeper blocks a downloaded copy until the player
+allows it, and an app launched from a quarantined location runs translocated. Signing and
+notarizing before distribution is your release step.
 
-`deb`/`msi`/`dmg` are each silently ignored on the OSes they don't apply to (see "Tips and
-Caveats" below), so a single input set — including turning more than one on at once — can
-stay the same across a matrix; only the one matching the current runner actually does
-anything. `package-name`/`package-version` name and version whichever installable format
-you asked for; they're ignored entirely when none of `deb`/`msi`/`dmg` are set.
+### Project icon
 
-## Content packing
+Your game's icon comes first; the official Roves icon is the fallback. The rules are the
+engine's and Roves Packmaster's: `cef/project_icon.py` is an identical copy of the engine's
+`support/cef-netrender-probe/packaging/project_icon.py` (Pillow 11.3.0 pinned), and runs on
+every desktop platform.
 
-By default, `mach bundle` doesn't ship `content-dir` as loose, individually browsable
-files — it packs it into a handful of tar+zstd archives, extracted back by the engine
-itself at launch (an eager "boot set" for the html file and whatever it directly
-references, everything else lazily on first request). See
-[DRincs-Productions/roves]'s own README, "Content packing & compression" section, for the
-full design (why, the boot-set/lazy split, the archive layout) — these inputs are a direct
-passthrough to the `mach bundle` flags documented there:
+- **Window icon** (title bar, taskbar, Dock while running): `icon-png`, else
+  `content-dir/icon.png`, else the largest frame of the project ICO (`icon-ico`, else
+  `content-dir/icon.ico` or `favicon.ico`). With none, the package has no `icon.png` and the
+  player shows the embedded Roves logo.
+- **Windows `play.exe`** (Explorer, shortcuts): `icon-ico`, else an ICO generated from the
+  PNG above, else `content-dir/icon.ico` or `favicon.ico`, else the Roves icon shipped in the
+  package (`roves.ico`). Patched with electron/rcedit v2.0.0 (SHA-256 pinned).
+- **macOS app icon** (Finder, Launchpad, the Dock before launch): the resolved window PNG
+  converted to `.icns` with `sips`/`iconutil` (`cef/icns.sh`, an identical copy of the
+  engine's `support/cef-macos-gate/packaging/icns.sh`), replacing the Roves `.icns` the
+  `.app`'s `CFBundleIconFile` names. Without a project icon the Roves `.icns` stays.
+- **Linux**: only the window icon (`icon.png` next to the executable); the package has no
+  `.desktop` entry.
 
-| Input | Description | Default |
-| --- | --- | --- |
-| `content-compress` | `auto` or `none` — pack `content-dir` into archives, or copy it in as loose, uncompressed files with none of the below. | `auto` |
-| `content-compression-level` | zstd compression level used by `content-compress: 'auto'`. Low favors speed. | `1` |
-| `content-max-pack-size` | Max size per content archive (e.g. `500M`, `1G`) before splitting into further parts. | `500M` |
-| `content-exclude` | Globs (relative to `content-dir`) of files to leave loose/uncompressed instead of packing — one per line for more than one. | unset |
-| `content-boot-include` | Globs (relative to `content-dir`), one per line for more than one, of extra files to force into the eager boot set. | unset |
+Limits: at most 8 MiB; PNG square, 16-2048 px; ICO valid with a square largest frame of at
+least 16 px. An explicit `icon-png`/`icon-ico` that breaks them fails the run; an invalid file
+found in `content-dir` is a warning and the next source is tried. The loading screen always
+shows the Roves logo. The `icon-source` output reports what was used.
 
-[DRincs-Productions/roves]: https://github.com/DRincs-Productions/roves#content-packing--compression
+### Steam
 
-## Base mode (the default)
+`steam: 'true'` selects the Steam variant of the same player: the Steamworks redistributable
+(`steam_api64.dll`, `libsteam_api.dylib` or `libsteam_api.so`) sits next to the executable and
+the game reaches Steam through the Roves host API. The App ID comes from Steam's launch
+environment (`SteamAppId`), else a development `steam_appid.txt` next to the executable (put
+it in your package yourself for local testing; Steam itself does not need it). Steam missing
+or not running is never fatal: the host API answers "unavailable" and the game plays as in
+the standard package.
 
-By default (`advanced-mode: 'false'`, which you never need to set explicitly), this action
-skips checking out and compiling the engine entirely — it downloads the same
-`roves_shell_<platform>[_steam].zip` release asset
-[Roves Packmaster](https://github.com/DRincs-Productions/roves-packmaster) itself downloads, at
-this action's own pinned engine tag (hardcoded in `action.yml`, not a configurable input — see
-"Releasing this action" below for how that pin gets bumped), and runs
-`mach bundle --bin <the extracted binary>` against it. No Rust/native toolchain build of the
-engine at all — just a download plus packing your content into it, which is what makes it
-fast, and why it needs no `mach bootstrap` step either:
+### Local MCP bridge (`enable-mcp`)
 
-```yml
-- uses: DRincs-Productions/roves-action@v0
-  with:
-    content-dir: dist
-    artifact-name: my-game_windows
-```
+Windows only, default `'false'`. With `'true'` the action packages
+`roves_shell_windows_mcp.zip`: an AI agent or IDE connected through MCP (Model Context
+Protocol) can read the running game's state and console, run JavaScript in the page, click,
+press keys and type — useful for automated playtests. The bridge listens only on a local
+Windows named pipe protected by a per-session token, but any program running as the same
+Windows user can control the game: **development only, never ship that package to players**.
+The action requires a complete MCP package (`mcp\enabled`, `mcp\server.mjs`, `mcp\README.md`,
+the MCP server dependency and the MCP section of `PROVENANCE.txt`) and never adds MCP files
+itself. With `'false'` the output never contains `mcp\` (no activation marker, no server).
+See `mcp\README.md` inside the package for connecting a client. `enable-mcp` with `steam`, or
+on macOS/Linux, fails the run: no such package is published.
 
-Every input that only exists to control *how the engine compiles* is incompatible with base
-mode — a prebuilt shell has one fixed build configuration (a `--release` build, the real
-GStreamer media stack, no sanitizers), so `features` (besides `'steam'`, the one published
-variant), `target`, `media-stack`, every sanitizer/debug/`--use-crown`/`--coverage` flag,
-`android`/`ios`/`win-arm64`, `flavor`, `build-params`, `bin`, and
-`nightly` all need `advanced-mode: 'true'` (see below) — setting any of them to a non-default
-value in base mode fails the run with a clear error rather than silently ignoring your input.
-Everything else — `content-dir`, `icon-png`/`icon-ico`, and all of `mach bundle`'s own inputs
-(`html-file`, `content-compress`, `deb`/`msi`/`dmg`, `diagnostic-script`, ...) — works exactly
-the same in either mode, since none of that is a build-time concern.
+## Android and iOS
 
-## Advanced mode: compiling from source
+Both still use the engine's native WebView tooling at **v0.7.15** (a separate pin from the
+desktop player): the action checks out that tag and runs `mach bundle --android`, or
+`support/ios/bundle.py` + XcodeGen (`ios-release: 'false'`) / `mach bundle --ios --ios-release`.
+Nothing is compiled. Android installs a JDK and the Android SDK itself; iOS needs a macOS
+runner. `steam`, `enable-mcp` and `icon-ico` do not apply; iOS does not support
+`icon-png` yet (add the icon in Xcode). Android release signing and iOS signing work as before
+(see the `android-*` and `ios-*` inputs).
 
-Set `advanced-mode: 'true'` to check out this action's pinned engine tag's source and build it
-from source with `mach build` + `mach bundle` instead — mirroring the engine repo's own
-[`.github/workflows/test.yml`](https://github.com/DRincs-Productions/roves/blob/main/.github/workflows/test.yml):
+## Migrating to the CEF player
 
-```yml
-- uses: DRincs-Productions/roves-action@v0
-  with:
-    content-dir: dist
-    artifact-name: my-game_windows
-    advanced-mode: 'true'
-    media-stack: dummy
-```
+The desktop path no longer downloads the Servo shell (`roves_shell_<platform>.zip` of
+v0.7.15) or compiles anything, so every input that configured `mach build` or the Servo
+`mach bundle` for desktop is gone. Passing a removed input makes GitHub warn about an
+unexpected input; it has no effect.
 
-This is slower (compiling Rust, with a large dependency graph, on every call) and needs
-`mach bootstrap` to install the engine's own native build dependencies first (this action
-does that for you, unless `bootstrap: 'false'`) — but every `mach build` flag becomes
-available: cross-compile `target`, extra Cargo `features`, sanitizers, an explicit
-`bin`/`nightly` to bundle instead of building, and so on (`icon-png`/`icon-ico` already work
-the same in base mode — see above, nothing advanced-mode-specific about them anymore).
-The engine tag itself is still this action's own pinned version — not something you can point
-at an unreleased commit; if you need that, build against a fork of this action instead.
+| Removed input | Replacement |
+| --- | --- |
+| `advanced-mode`, `release`, `dev`, `production`, `profile`, `target`, `media-stack`, `jobs`, `with-asan`, `with-tsan`, `with-debug-assertions`, `debug-mozjs`, `with-frame-pointer`, `use-crown`, `coverage`, `win-arm64`, `verbose`, `very-verbose`, `build-params`, `bin`, `nightly` | None: the desktop player is prebuilt, with one configuration per platform. |
+| `features: steam` | `steam: 'true'` |
+| `html-file`, `window-size`, `bundle-params` | None: the player always opens `game/index.html` in its own window. |
+| `content-compress`, `content-compression-level`, `content-max-pack-size`, `content-exclude`, `content-boot-include` | None: `game/` holds your files as they are, served by the player. |
+| `deb`, `msi`, `dmg`, `package-name`, `package-version` | None yet: the output is a portable zip on every platform. |
+| `diagnostic-script` | None. |
+| `flavor`, `no-package` | None: they only applied to `mach build`, which Android never ran. |
 
-The engine's `test.yml` also runs an SDL3 virtual-gamepad probe before packaging. That probe
-is engine CI only: this action has no matching step or input. In the engine workflow the
-Windows/Linux probe gates packaging and the Steam smoke test, while the macOS probe runs as a
-separate, visible job that does not gate them. Nothing about the inputs or outputs of this
-action changes because of that split.
+Other changes:
 
-If your CI runs this often, either cache Cargo's registry/target directories yourself around
-this action (e.g. `actions/cache` keyed on this action's own version + your lockfile — this
-action doesn't do that for you, since the right cache key/scope depends on your own workflow),
-or reconsider whether you actually need advanced mode at all for that particular run.
-
-## Experimental: CEF Windows player
-
-A separate sub-action, `cef-windows/`, packages your game on the experimental CEF + SDL3 +
-wgpu Windows player instead of the Servo-based shell. The root action above is unchanged.
-Nothing is compiled and there is **no release asset** for this player yet: the base is the
-player package a successful `cef-netrender-probe.yml` run of `DRincs-Productions/roves`
-uploaded as a workflow artifact. The sub-action checks that the run completed with
-`success`, downloads its artifact, verifies every file against the package's own
-`SHA256SUMS.txt`, keeps `play.dll`/the CEF runtime unchanged, replaces `game\` with
-`content-dir`, applies your game's icon (below) and regenerates `SHA256SUMS.txt` and
-`PROVENANCE.txt` (`cef-windows/assemble.ps1`).
-
-```yml
-- uses: DRincs-Productions/roves-action/cef-windows@<ref>
-  with:
-    content-dir: dist
-    base-run-id: '<id of a green cef-netrender-probe.yml run>'
-    github-token: ${{ secrets.ROVES_ACTIONS_READ_TOKEN }} # actions:read on DRincs-Productions/roves
-    enable-mcp: 'false' # default
-```
-
-| Input | Default | Meaning |
-| --- | --- | --- |
-| `content-dir` | (required) | Your built web content, `index.html` at its root. |
-| `base-run-id` | (required) | A successful `cef-netrender-probe.yml` run; other runs are refused. Its artifacts expire (14 days, MCP package 7 days). |
-| `github-token` | `github.token` | Reads that run and downloads its artifact; another repository's artifacts need a token with `actions:read` there. |
-| `enable-mcp` | `'false'` | Keep the player's local MCP development bridge (below). |
-| `icon-png` | `''` | Window icon: square PNG, 16-2048 px, at most 8 MiB. Default `content-dir/icon.png`. |
-| `icon-ico` | `''` | `play.exe` icon (.ico). Default: generated from the PNG, else `content-dir/icon.ico` or `favicon.ico`. |
-| `artifact-name` | `roves-game-cef` | Name of the output folder and zip. |
-
-Outputs: `bundle-dir`, `archive-path`, `mcp-enabled`, `icon-source`. Windows runners only.
-
-**Icon.** Your game's icon comes first; the official Roves icon is the fallback. The window
-(title bar and taskbar) uses `icon-png`, else `content-dir/icon.png`, else the largest frame
-of your ICO, and shows the Roves logo when you have none. `play.exe` (Explorer, shortcuts)
-uses `icon-ico`, else an ICO generated from that PNG, else `content-dir/icon.ico` or
-`favicon.ico`, else the Roves icon shipped in the base (`roves.ico`; older bases without it
-keep their own `play.exe` icon). An explicit icon that is not valid fails the step; an
-invalid file found in `content-dir` is a warning. `cef-windows/project_icon.py` is an
-identical copy of the engine's script (Pillow 11.3.0 and electron/rcedit v2.0.0, pinned).
-The loading screen always shows the Roves logo.
-
-**Local MCP bridge (`enable-mcp`).** With `'true'`, an AI agent or IDE connected through MCP
-(Model Context Protocol) can read the running game's state and console, run JavaScript in
-the page, click, press keys and type, which is useful for automated playtests. The bridge
-listens only on a local Windows named pipe protected by a per-session token, but any program
-running as the same Windows user can control the game: **development only, never ship that
-package to players**. It uses the run's MCP-enabled artifact
-(`visual-novel-template-roves-cef-mcp-windows-x64`, produced only when the engine workflow is
-dispatched with `enable-mcp`) and fails if the run has none or if that package is
-incomplete; it never adds MCP files itself. With `'false'` the plain artifact is used and the
-output never contains an `mcp\` folder (no `mcp\enabled` activation marker, no MCP server).
-See `support/cef-netrender-probe/mcp/README.md` in the engine repository for connecting a
-client.
+- `android: 'true'` and `ios: 'true'` no longer need `advanced-mode: 'true'`.
+- `icon-png` is now the macOS app icon too, and `icon-ico` also feeds the window icon on
+  macOS/Linux when there is no PNG; an explicit invalid icon now fails the run.
+- New: `steam`, `enable-mcp`, and the `mcp-enabled`/`icon-source` outputs.
+- The `cef-windows/` sub-action (packaging from an engine workflow artifact) was folded into
+  this action; use the root action with the release asset instead.
+- `@v0` keeps the Servo desktop shell at v0.7.15; the CEF player is `@v1`.
 
 ## Tips and Caveats
 
-- Every input is tagged `[servo]` (plain upstream Servo — `mach build`, or `mach bundle`'s
-  build-profile-selection flags, which exist purely to *locate* the binary `mach build`
-  already produced) or `[roves]` (added by Roves — `mach bundle` doesn't exist upstream at
-  all). Almost everything is optional; the one required input is `content-dir`.
-- `html-file` defaults to `index.html`, not mach's own `dist/index.html` default: this action
-  always passes `content-dir` as an absolute path pointing *directly* at your built output
-  (e.g. the `dist/` folder itself, not its parent) — so the entry file is normally right at
-  that root. Override `html-file` if your entry html lives deeper inside `content-dir`.
-- `content-exclude`/`content-boot-include` are repeatable flags on the real `mach bundle` CLI;
-  pass more than one glob as a YAML multi-line string (one per line), not a comma/space-
-  separated list.
-- If you set both `release` and `dev` (or any other mutually-exclusive pair mach itself
-  rejects), that's forwarded to mach as-is and mach's own argument parser is what errors —
-  this action does no validation of its own on top of mach's.
-- `deb`/`msi`/`dmg` are each only honored on their own OS; setting any of them on the wrong
-  runner is silently ignored rather than erroring, so a single input set (even with more
-  than one turned on) can stay the same across a matrix — see "Portable vs. installable
-  packages" above.
-- This action does not set up Node/npm/etc. for you — building your game's own web content is
-  entirely your own step, before calling this action.
+- Inputs tagged `[roves]` forward to the engine's `mach bundle` (mobile only); the desktop
+  inputs are this action's own.
+- `content-dir` must contain `index.html` at its root; the run fails early otherwise.
+- `output`, when set, is deleted and recreated.
+- This action does not set up Node/npm for you — building your game is your own step.
 
 ## Releasing this action
 
-Push a `v<major>.<minor>.<patch>` tag (e.g. `v0.1.3`) — see
+Push a `v<major>.<minor>.<patch>` tag (e.g. `v1.0.0`) — see
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which creates a GitHub
-Release for that tag and force-moves the major-version tag (`v0`) to point at it, so consumers
-pinning `uses: DRincs-Productions/roves-action@v0` automatically get every `0.x.y` update.
+Release for that tag and force-moves the major-version tag (`v1`) to point at it, so consumers
+pinning `uses: DRincs-Productions/roves-action@v1` automatically get every `1.x.y` update.
 
 To also list a release on the [GitHub Marketplace](https://github.com/marketplace?type=actions):
 open that release's **Edit release** page and check **"Publish this Action to the GitHub
@@ -777,65 +439,3 @@ Marketplace"** — a manual, web-UI-only step (requires org-owner permissions an
 publishing account) that this workflow deliberately doesn't attempt to automate. GitHub
 validates `action.yml`'s `name`/`description`/`icon`/`color` at that point (`description` in
 particular has a hard 125-character limit) — fix and re-release if it flags anything.
-
-
-The engine also has a separate `V8 migration checks` workflow for isolated scripting tests
-on Windows, Linux and macOS, with normal and JIT-less configurations. This development-only
-matrix also tests the smoke runner itself: failed assertions, incomplete reports, unexpected
-skips and missing Window/CSP/navigation checks fail validation. JIT-less Wasm and explicitly
-configured headless device exceptions are documented in the engine architecture wiki.
-This matrix does not change this action's pinned engine or game packaging options. Its
-debug-only V8 heap snapshot diagnostic (a three-snapshot document-retention series in Linux
-engine CI) is not
-enabled by this action and adds no inputs. Engine-wide
-contributor instructions are in [AGENTS.md](https://github.com/DRincs-Productions/roves/blob/main/AGENTS.md).
-
-The engine's separate `deno_core single-document probe` workflow is a development-only
-isolated experiment on Linux/Windows in normal and JIT-less modes. It does not change this
-action's inputs, pinned engine, packaging outputs or game runtime; deno_core is not adopted
-by the production engine through that probe.
-
-The engine CI preparation for the Deno cutover keeps the isolated V8 native crates
-self-contained, including their public-V8 C++ build script and standalone Cargo dependency
-ranges. This action builds the complete pinned engine checkout, so it needs no matching
-input or extra copy step. The in-progress cutover is not enabled by updating this note.
-
-The pending engine V8 CI also watches the complete single-document integration surface
-(script, constellation, embedder, Servo and shell) and uses a document-retention heap
-snapshot artifact. This changes contributor coverage only, not action inputs or outputs.
-
-Failed engine V8 development builds also retain compiler and smoke logs as CI artifacts. This
-diagnostic upload does not change this action's pinned release, inputs or bundle outputs.
-
-Engine Linux V8 smoke jobs also retain each fresh process runtime log on success or failure;
-this development artifact does not alter bundle outputs or action inputs.
-
-The engine V8 contributor smoke runner enables existing Servo hard-fail mode for disposable
-processes. This is not a new bundle flag or an input exposed by this action.
-
-Engine V8 CI adds real Windows module contracts in normal and compiled JITless modes,
-reusing the existing smoke runner and per-process runtime artifacts. Linux keeps its full
-suite; no action input or bundle output changes. The preceding32d4 required batch is green;
-new Windows runtime verification remains pending its own CI.
-
-Windows V8 CI now shares mach build ANGLE DLL staging before browser execution; missing
-EGL/GLES dependencies fail preparation. This fixes startup coverage without changing
-action inputs or bundle outputs. Positive Windows module results await the corrected CI.
-
-The Windows browser jobs now start correctly. Smoke fixture JavaScript/JSON MIME types are
-explicitly defined through Python's standard server extension map, preventing host registry
-associations from serving .mjs as text/plain. The deliberate wrong-MIME rejection remains.
-The actual browser result still awaits corrected CI; Linux and native checks are green.
-
-Module smoke coverage now also records initial static loading separately from modules
-inserted at runtime (22 required checks). Validated startup/timer observations are retained
-in CI summaries without a performance threshold. The preceding6992 CI batch is green;
-new startup coverage awaits its own CI. No action input or bundle format changes.
-
-The game-blocking cached-static-TLA bug now has an authorized temporary deno_core0.413
-snapshot with the minimal async-graph guard, preserved MIT license and removal TODO.
-Upstream: [issue37097](https://github.com/denoland/deno/issues/37097),
-[draft PR37098](https://github.com/denoland/deno/pull/37098). Native suites pass117 normal/
-116 JITless. Browser coverage now requires23 module checks; integrated CI is still needed.
-CI --build checks propagate Cargo failures, preventing use of a stale cached binary.
-No action inputs, bundle format or privileged game APIs are introduced.

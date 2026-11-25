@@ -1,5 +1,6 @@
-# Assembles the experimental CEF Windows player package (see ../README.md, "Experimental:
-# CEF Windows player"). Kept in step with roves-packmaster's src-tauri/src/cef_player.rs:
+# Assembles the Windows CEF player package from an extracted roves_shell_windows[_steam|_mcp].zip
+# release asset (see ../README.md, "Desktop: the CEF player"; macOS/Linux: assemble.sh). Kept in
+# step with roves-packmaster's src-tauri/src/cef_player.rs:
 #
 #   1. Locate the base package (the folder with play.exe, or its only such subfolder).
 #   2. Verify it against its own SHA256SUMS.txt: every file listed, every listed file present
@@ -71,7 +72,7 @@ $provenance = Get-Content -LiteralPath (Join-Path $base 'PROVENANCE.txt') -Encod
 $mcpCapable = (@($mcpRequired | Where-Object { -not (Test-Path -LiteralPath (Join-Path $base $_) -PathType Leaf) }).Count -eq 0) -and
   [bool]($provenance | Where-Object { $_.StartsWith($mcpHeader) })
 if ($mcpOn -and -not $mcpCapable) {
-  throw 'enable-mcp is true, but the CEF base package is not a complete MCP-enabled package (it needs the visual-novel-template-roves-cef-mcp-windows-x64 artifact of a successful engine run)'
+  throw 'enable-mcp is true, but the CEF base package is not a complete MCP-enabled package (it needs the roves_shell_windows_mcp.zip release asset)'
 }
 if (-not (Test-Path -LiteralPath (Join-Path $ContentDir 'index.html') -PathType Leaf)) { throw "$ContentDir has no index.html at its root" }
 
@@ -117,7 +118,7 @@ foreach ($line in $provenance) {
 }
 while ($lines.Count -and -not $lines[$lines.Count - 1].Trim()) { $lines.RemoveAt($lines.Count - 1) }
 $lines.Add('')
-$lines.Add('Game replaced by DRincs-Productions/roves-action (cef-windows)')
+$lines.Add('Game replaced by DRincs-Productions/roves-action')
 $lines.Add('  game\ contains the developer''s own build output, not the sample game described in')
 $lines.Add('  the "Game" section above; the sample game''s provenance files were removed. The')
 if ($exeIcon -eq 'replaced') {

@@ -9,14 +9,20 @@
 #      engine CI writes into PROVENANCE.txt). Never add MCP files of our own.
 #   4. Copy the base without game\, without the sample game's provenance and, unless
 #      EnableMcp, without mcp\ and provenance\mcp-*; copy ContentDir to game\.
-#   5. Rewrite PROVENANCE.txt (MCP section dropped when off, a "game replaced" note
+#   5. Project icon (IconDir, from project_icon.py): the base's icon.png (the sample game's
+#      window icon) is never copied; the resolved icon.png is added when the game has one and
+#      play.exe's icon resource is patched with the resolved play.ico (rcedit).
+#   6. Rewrite PROVENANCE.txt (MCP section dropped when off, a "game replaced" note
 #      appended) and regenerate SHA256SUMS.txt.
 param(
   [Parameter(Mandatory)] [string] $BaseDir,
   [Parameter(Mandatory)] [string] $ContentDir,
   [Parameter(Mandatory)] [string] $OutDir,
   [Parameter(Mandatory)] [ValidateSet('true', 'false')] [string] $EnableMcp,
-  [string] $BaseNote = ''
+  [string] $BaseNote = '',
+  [string] $IconDir = '',
+  [string] $Rcedit = '',
+  [string] $IconNote = ''
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -76,7 +82,7 @@ $OutDir = (Resolve-Path -LiteralPath $OutDir).Path
 foreach ($file in Get-ChildItem -LiteralPath $base -Recurse -File) {
   $rel = Get-Rel $base $file.FullName
   $first = $rel.Split('/')[0]
-  if ($first -eq 'game' -or $rel -in @('SHA256SUMS.txt', 'PROVENANCE.txt') -or $rel.StartsWith('provenance/visual-novel-template-')) { continue }
+  if ($first -eq 'game' -or $rel -in @('SHA256SUMS.txt', 'PROVENANCE.txt', 'icon.png') -or $rel.StartsWith('provenance/visual-novel-template-')) { continue }
   if (-not $mcpOn -and ($first -eq 'mcp' -or $rel.StartsWith('provenance/mcp-'))) { continue }
   $target = Join-Path $OutDir $rel
   New-Item -ItemType Directory -Force (Split-Path -Parent $target) | Out-Null
@@ -89,7 +95,21 @@ foreach ($file in Get-ChildItem -LiteralPath $ContentDir -Recurse -File) {
   Copy-Item -LiteralPath $file.FullName -Destination $target
 }
 
-# 5. Provenance and checksums.
+# 5. Project icon.
+$exeIcon = 'unchanged'
+if ($IconDir) {
+  $windowPng = Join-Path $IconDir 'icon.png'
+  if (Test-Path -LiteralPath $windowPng -PathType Leaf) { Copy-Item -LiteralPath $windowPng -Destination (Join-Path $OutDir 'icon.png') }
+  $playIco = Join-Path $IconDir 'play.ico'
+  if (Test-Path -LiteralPath $playIco -PathType Leaf) {
+    if (-not $Rcedit) { throw 'a play.exe icon was resolved but no rcedit path was given' }
+    & $Rcedit (Join-Path $OutDir 'play.exe') --set-icon $playIco
+    if ($LASTEXITCODE -ne 0) { throw "rcedit exit $LASTEXITCODE" }
+    $exeIcon = 'replaced'
+  }
+}
+
+# 6. Provenance and checksums.
 $lines = [System.Collections.Generic.List[string]]::new()
 foreach ($line in $provenance) {
   if (-not $mcpOn -and $line.StartsWith($mcpHeader)) { break }
@@ -100,7 +120,13 @@ $lines.Add('')
 $lines.Add('Game replaced by DRincs-Productions/roves-action (cef-windows)')
 $lines.Add('  game\ contains the developer''s own build output, not the sample game described in')
 $lines.Add('  the "Game" section above; the sample game''s provenance files were removed. The')
-$lines.Add('  engine files (play.exe, play.dll, CEF runtime) are the base package''s, unmodified.')
+if ($exeIcon -eq 'replaced') {
+  $lines.Add('  engine files (play.exe, play.dll, CEF runtime) are the base package''s; only play.exe''s')
+  $lines.Add('  icon resource was replaced (electron/rcedit v2.0.0).')
+} else {
+  $lines.Add('  engine files (play.exe, play.dll, CEF runtime) are the base package''s, unmodified.')
+}
+if ($IconNote) { $lines.Add("  icons: $IconNote") }
 if ($BaseNote) { $lines.Add("  base: $BaseNote") }
 if ($mcpOn) {
   $lines.Add('  Local MCP bridge: ON (mcp\enabled kept). Development and playtests only: any program')

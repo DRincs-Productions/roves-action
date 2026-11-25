@@ -693,8 +693,9 @@ Nothing is compiled and there is **no release asset** for this player yet: the b
 player package a successful `cef-netrender-probe.yml` run of `DRincs-Productions/roves`
 uploaded as a workflow artifact. The sub-action checks that the run completed with
 `success`, downloads its artifact, verifies every file against the package's own
-`SHA256SUMS.txt`, keeps `play.exe`/`play.dll`/the CEF runtime unchanged, replaces `game\`
-with `content-dir` and regenerates `SHA256SUMS.txt` and `PROVENANCE.txt` (`cef-windows/assemble.ps1`).
+`SHA256SUMS.txt`, keeps `play.dll`/the CEF runtime unchanged, replaces `game\` with
+`content-dir`, applies your game's icon (below) and regenerates `SHA256SUMS.txt` and
+`PROVENANCE.txt` (`cef-windows/assemble.ps1`).
 
 ```yml
 - uses: DRincs-Productions/roves-action/cef-windows@<ref>
@@ -711,9 +712,21 @@ with `content-dir` and regenerates `SHA256SUMS.txt` and `PROVENANCE.txt` (`cef-w
 | `base-run-id` | (required) | A successful `cef-netrender-probe.yml` run; other runs are refused. Its artifacts expire (14 days, MCP package 7 days). |
 | `github-token` | `github.token` | Reads that run and downloads its artifact; another repository's artifacts need a token with `actions:read` there. |
 | `enable-mcp` | `'false'` | Keep the player's local MCP development bridge (below). |
+| `icon-png` | `''` | Window icon: square PNG, 16-2048 px, at most 8 MiB. Default `content-dir/icon.png`. |
+| `icon-ico` | `''` | `play.exe` icon (.ico). Default: generated from the PNG, else `content-dir/icon.ico` or `favicon.ico`. |
 | `artifact-name` | `roves-game-cef` | Name of the output folder and zip. |
 
-Outputs: `bundle-dir`, `archive-path`, `mcp-enabled`. Windows runners only.
+Outputs: `bundle-dir`, `archive-path`, `mcp-enabled`, `icon-source`. Windows runners only.
+
+**Icon.** Your game's icon comes first; the official Roves icon is the fallback. The window
+(title bar and taskbar) uses `icon-png`, else `content-dir/icon.png`, else the largest frame
+of your ICO, and shows the Roves logo when you have none. `play.exe` (Explorer, shortcuts)
+uses `icon-ico`, else an ICO generated from that PNG, else `content-dir/icon.ico` or
+`favicon.ico`, else the Roves icon shipped in the base (`roves.ico`; older bases without it
+keep their own `play.exe` icon). An explicit icon that is not valid fails the step; an
+invalid file found in `content-dir` is a warning. `cef-windows/project_icon.py` is an
+identical copy of the engine's script (Pillow 11.3.0 and electron/rcedit v2.0.0, pinned).
+The loading screen always shows the Roves logo.
 
 **Local MCP bridge (`enable-mcp`).** With `'true'`, an AI agent or IDE connected through MCP
 (Model Context Protocol) can read the running game's state and console, run JavaScript in

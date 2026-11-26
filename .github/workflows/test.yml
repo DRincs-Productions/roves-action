@@ -6,10 +6,11 @@ name: 'Test this action against a real game (visual-novel-template)'
 # currently pushed here, not the published @v0 tag. Every run overwrites the same rolling
 # "test" GitHub Release on *this* repo; it is not versioned (see release.yml for releases).
 #
-# `build-and-publish` covers the desktop CEF player path: windows/macos/linux x
+# The packaging runs through the pinned @drincs/roves-cli (action.yml, ROVES CLI PIN), which must
+# be published on npm first. `build-and-publish` covers the desktop CEF player path: windows/macos/linux x
 # standard/steam/MCP development package. It downloads the pinned engine release (v0.9.0,
 # action.yml's DESKTOP PLAYER PIN): UNTIL ROVES v0.9.0 IS PUBLISHED WITH ITS roves_shell_*
-# CEF ASSETS, EVERY LEG OF THAT JOB FAILS AT "Download the CEF player" -- expected, not a
+# CEF ASSETS, EVERY LEG OF THAT JOB FAILS AT "Package with roves-cli" (download) -- expected, not a
 # regression. After that it checks input wiring, asset verification, the game replacement
 # (byte for byte), Steam/MCP selection, icon resolution and the per-platform zip.
 #
@@ -17,9 +18,12 @@ name: 'Test this action against a real game (visual-novel-template)'
 # v0.7.15 (action.yml's MOBILE ENGINE PIN) and pass independently of v0.9.0. Separate jobs:
 # each needs its own platform setup (JDK + Android SDK, or Xcode/XcodeGen on macOS).
 
+# Project rule (user, 2026-11-26): pushes to main run the Windows legs only; macOS and Linux
+# (desktop, Android, iOS) run only at release time, on a vX.Y.Z tag, or by manual dispatch.
 on:
   push:
     branches: [main]
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
   workflow_dispatch: {}
 
 env:
@@ -55,18 +59,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # A push to main runs the Windows legs only; a vX.Y.Z tag or a manual run runs all three
+        # platforms (project rule: macOS/Linux CI only at release time).
+        os_name: ${{ fromJSON((github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v')) && '["windows"]' || '["windows","macos","linux"]') }}
+        variant: [standard, steam, mcp]
+        # Every entry matches an existing variant, so these only add fields (never new legs).
         include:
-          - { os: windows-latest, os_name: windows, steam: 'false', mcp: 'false', suffix: '' }
-          - { os: windows-latest, os_name: windows, steam: 'true', mcp: 'false', suffix: '_steam' }
-          - { os: windows-latest, os_name: windows, steam: 'false', mcp: 'true', suffix: '_mcp' }
-          - { os: macos-latest, os_name: macos, steam: 'false', mcp: 'false', suffix: '' }
-          - { os: macos-latest, os_name: macos, steam: 'true', mcp: 'false', suffix: '_steam' }
-          - { os: macos-latest, os_name: macos, steam: 'false', mcp: 'true', suffix: '_mcp' }
-          - { os: ubuntu-latest, os_name: linux, steam: 'false', mcp: 'false', suffix: '' }
-          - { os: ubuntu-latest, os_name: linux, steam: 'true', mcp: 'false', suffix: '_steam' }
-          - { os: ubuntu-latest, os_name: linux, steam: 'false', mcp: 'true', suffix: '_mcp' }
+          - { variant: standard, steam: 'false', mcp: 'false', suffix: '' }
+          - { variant: steam, steam: 'true', mcp: 'false', suffix: '_steam' }
+          - { variant: mcp, steam: 'false', mcp: 'true', suffix: '_mcp' }
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os_name == 'windows' && 'windows-latest' || (matrix.os_name == 'macos' && 'macos-latest' || 'ubuntu-latest') }}
     steps:
       # Needed so `uses: ./` below resolves to this repo's own action.yml, checked out at the
       # commit that triggered this run -- not the published DRincs-Productions/roves-action@v0
@@ -125,7 +128,7 @@ jobs:
               root="$x/$NAME" game="$x/$NAME/game" steam_lib="$x/$NAME/steam_api64.dll" mcp_dir="$x/$NAME/mcp" ;;
             macos)
               ditto -x -k "$ARCHIVE" "$x"
-              root="$(find "$x/$NAME" -maxdepth 1 -name '*.app')"
+              root="$x/$NAME.app"
               game="$root/Contents/Resources/game" steam_lib="$root/Contents/MacOS/libsteam_api.dylib"
               mcp_dir="$root/Contents/Resources/mcp"
               [ -L "$root/Contents/Frameworks/Chromium Embedded Framework.framework/Versions/Current" ] ||
@@ -170,6 +173,7 @@ jobs:
   # ── Android (mobile engine pin v0.7.15, independent of v0.9.0) ──────────────────────
   build-android:
     needs: ensure-test-release
+    if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -292,6 +296,7 @@ jobs:
   # ── iOS (mobile engine pin v0.7.15, independent of v0.9.0) ──────────────────────────
   build-ios:
     needs: ensure-test-release
+    if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     runs-on: macos-latest

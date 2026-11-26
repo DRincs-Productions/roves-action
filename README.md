@@ -11,11 +11,17 @@ Packages your already-built web game as a native app with
 - **Android and iOS (experimental): the native WebView path** of the Roves engine at
   v0.7.15 (`mach bundle --android`, `support/ios/bundle.py`/`mach bundle --ios`), unchanged.
 
+The packaging is done by [`@drincs/roves-cli`](https://github.com/DRincs-Productions/roves-cli)
+(the `roves` command, pinned to **0.3.0**), which you can also run yourself outside GitHub
+Actions. The action validates its inputs, installs the toolchains the mobile paths need
+(JDK, Android SDK, uv, Python, XcodeGen), runs the CLI and maps its result to the outputs.
+
 Upgrading from the Servo desktop shell (`advanced-mode`, `features`, `deb`/`msi`/`dmg`,
 content packing, ...)? See [Migrating to the CEF player](#migrating-to-the-cef-player).
 
-> **Pin status:** the desktop path downloads assets of the Roves **v0.9.0** release. Until
-> that release is published, the desktop download fails with a clear error.
+> **Pin status:** the desktop path downloads assets of the Roves **v0.9.0** release through
+> `@drincs/roves-cli` **0.3.0**. Until that release is published, the desktop download fails
+> with a clear error.
 
 ## What this action does *not* do
 
@@ -265,14 +271,14 @@ jobs:
     ios-team-id: ''
 
     # ── Packaging ────────────────────────────────────────────────────────────────
-    # Where the package is assembled, relative to your repo root (replaced if it exists);
-    # renamed to artifact-name before zipping.
+    # Selects the output folder: the package and its zip are written next to this path
+    # (in its parent folder), named after artifact-name.
     #
-    # default: roves-bundle-output
+    # default: roves-bundle-output (so the repo root)
     output: ''
 
     # Base name for the zip and the folder inside it: "my-game" gives my-game.zip
-    # containing my-game/.
+    # containing my-game/ (macOS: the app bundle my-game.app at the zip root).
     #
     # default: roves-game
     artifact-name: ''
@@ -282,7 +288,7 @@ jobs:
 
 | Name | Description |
 | --- | --- |
-| `bundle-dir` | Absolute path to the unzipped package folder (named `artifact-name`) |
+| `bundle-dir` | Absolute path to the unzipped package folder (named `artifact-name`; on macOS the app bundle `artifact-name.app`) |
 | `archive-path` | Absolute path to `<artifact-name>.zip` |
 | `mcp-enabled` | `'true'` when the package contains the local MCP bridge, else `'false'` |
 | `icon-source` | Desktop: where the icons came from, e.g. `window project (game icon.png 512x512); executable project (ICO generated from game icon.png)` |
@@ -300,14 +306,14 @@ your package from it:
 | Windows (x64) | `false` | `false` | `roves_shell_windows.zip` | `play.exe`, `play.dll`, `libcef.dll` and the CEF runtime, `game\`, `PROVENANCE.txt`, `SHA256SUMS.txt` |
 | Windows (x64) | `true` | `false` | `roves_shell_windows_steam.zip` | the same plus `steam_api64.dll` |
 | Windows (x64) | `false` | `true` | `roves_shell_windows_mcp.zip` | the same plus `mcp\` (development only) |
-| macOS (arm64) | `false` | `false` | `roves_shell_macos.zip` | `roves-cef-macos-gate.app`, game in `Contents/Resources/game` |
+| macOS (arm64) | `false` | `false` | `roves_shell_macos.zip` | `<artifact-name>.app` at the zip root, game in `Contents/Resources/game` |
 | macOS (arm64) | `true` | `false` | `roves_shell_macos_steam.zip` | the same plus `Contents/MacOS/libsteam_api.dylib` |
 | macOS (arm64) | `false` | `true` | `roves_shell_macos_mcp.zip` | the same as standard plus `Contents/Resources/mcp/` (development only) |
 | Linux (x64) | `false` | `false` | `roves_shell_linux.zip` | the executable, `libcef.so`, `chrome-sandbox`, `game/` |
 | Linux (x64) | `true` | `false` | `roves_shell_linux_steam.zip` | the same plus `libsteam_api.so` |
 | Linux (x64) | `false` | `true` | `roves_shell_linux_mcp.zip` | the same as standard plus `mcp/` (development only) |
 
-What the action does with it:
+What `roves bundle` does with it:
 
 1. **Verify.** Windows: every file against the package's own `SHA256SUMS.txt` (no file
    missing, changed or unlisted). macOS/Linux: the documented files are present (the `.app`'s
@@ -319,9 +325,10 @@ What the action does with it:
    copied into `game/` unchanged. The engine files are never modified, except for the icons below.
 3. **Apply the project icon** ([Project icon](#project-icon)).
 4. **Windows only:** drop any sample-game provenance, append a "game replaced" note to
-   `PROVENANCE.txt` and regenerate `SHA256SUMS.txt` (`cef/assemble.ps1`).
-5. **Zip** one named folder: `Compress-Archive` on Windows, `ditto` on macOS (keeps the
-   framework symlinks), `zip -y` on Linux (keeps symlinks and execute bits).
+   `PROVENANCE.txt` and regenerate `SHA256SUMS.txt`.
+5. **Zip** one named folder (`<artifact-name>/`, or `<artifact-name>.app/` on macOS). The zip is
+   written entry by entry from the release asset, so Unix modes, the setuid `chrome-sandbox` and
+   the macOS framework symlinks are kept exactly as published, on every runner.
 
 **Linux sandbox.** Unzipping as a normal user keeps execute bits but not root ownership or the
 setuid bit of `chrome-sandbox`. On hosts that restrict unprivileged user namespaces (Ubuntu
@@ -337,9 +344,8 @@ notarizing before distribution is your release step.
 ### Project icon
 
 Your game's icon comes first; the official Roves icon is the fallback. The rules are the
-engine's and Roves Packmaster's: `cef/project_icon.py` is an identical copy of the engine's
-`support/cef-netrender-probe/packaging/project_icon.py` (Pillow 11.3.0 pinned), and runs on
-every desktop platform.
+engine's and Roves Packmaster's, implemented by roves-cli in pure JavaScript on every desktop
+platform.
 
 - **Window icon** (title bar, taskbar, Dock while running): `icon-png`, else
   `content-dir/icon.png`, else the largest frame of the project ICO (`icon-ico`, else
@@ -347,10 +353,9 @@ every desktop platform.
   player shows the embedded Roves logo.
 - **Windows `play.exe`** (Explorer, shortcuts): `icon-ico`, else an ICO generated from the
   PNG above, else `content-dir/icon.ico` or `favicon.ico`, else the Roves icon shipped in the
-  package (`roves.ico`). Patched with electron/rcedit v2.0.0 (SHA-256 pinned).
+  package (`roves.ico`). The icon resource of `play.exe` is replaced in place.
 - **macOS app icon** (Finder, Launchpad, the Dock before launch): the resolved window PNG
-  converted to `.icns` with `sips`/`iconutil` (`cef/icns.sh`, an identical copy of the
-  engine's `support/cef-macos-gate/packaging/icns.sh`), replacing the Roves `.icns` the
+  converted to `.icns` (16-1024 px, never upscaled), replacing the Roves `.icns` the
   `.app`'s `CFBundleIconFile` names. Without a project icon the Roves `.icns` stays.
 - **Linux**: only the window icon (`icon.png` next to the executable); the package has no
   `.desktop` entry.
@@ -392,10 +397,33 @@ See `mcp/README.md` inside the package for connecting a client. `enable-mcp` wit
 Both still use the engine's native WebView tooling at **v0.7.15** (a separate pin from the
 desktop player): the action checks out that tag and runs `mach bundle --android`, or
 `support/ios/bundle.py` + XcodeGen (`ios-release: 'false'`) / `mach bundle --ios --ios-release`.
-Nothing is compiled. Android installs a JDK and the Android SDK itself; iOS needs a macOS
-runner. `steam`, `enable-mcp` and `icon-ico` do not apply; iOS does not support
+Nothing is compiled. The action installs the toolchains first (Temurin JDK 17, the Android
+SDK command-line tools with `platform-tools`, `platforms;android-37*` and `build-tools;36.0.0`,
+Python, uv, and XcodeGen through Homebrew on macOS), then runs `roves android` / `roves ios`
+on that checkout; `mach bootstrap` (when `bootstrap` is `'true'`) and the `rustup show`
+prefetch are run by the CLI. iOS needs a macOS runner. `steam`, `enable-mcp` and `icon-ico` do not apply; iOS does not support
 `icon-png` yet (add the icon in Xcode). Android release signing and iOS signing work as before
 (see the `android-*` and `ios-*` inputs).
+
+## Migrating to roves-cli
+
+The packaging moved from this action's own scripts (`cef/assemble.ps1`, `cef/assemble.sh`,
+`cef/project_icon.py`, `cef/icns.sh` and the inline mobile steps) to `@drincs/roves-cli`. Inputs
+and outputs are unchanged, with these differences:
+
+- **macOS zip layout:** the zip now holds `<artifact-name>.app` at its root (the app bundle
+  renamed to your artifact name) instead of `<artifact-name>/roves-cef-macos-gate.app`, and
+  `bundle-dir` points at `<artifact-name>.app`. Update scripts that looked inside the folder.
+- **`output`** only selects where the package goes (its parent folder); nothing is assembled at
+  that path any more, and it is not deleted.
+- **`icon-source`** also reports the macOS app icon (`; app icon ...`) on macOS runners.
+- **`android-orientation`** is checked against the web manifest vocabulary before the build
+  instead of by `mach`.
+- **`PROVENANCE.txt`** (Windows) says the game was replaced by `@drincs/roves-cli`, and the
+  `play.exe` icon is patched by the CLI instead of electron/rcedit; Python/Pillow and rcedit are
+  no longer downloaded on desktop runners.
+- The action needs Node.js 20.19+ for the CLI: it uses the runner's Node when recent enough
+  and otherwise sets up Node 22 itself.
 
 ## Migrating to the CEF player
 
@@ -429,8 +457,11 @@ Other changes:
 - Inputs tagged `[roves]` forward to the engine's `mach bundle` (mobile only); the desktop
   inputs are this action's own.
 - `content-dir` must contain `index.html` at its root; the run fails early otherwise.
-- `output`, when set, is deleted and recreated.
-- This action does not set up Node/npm for you — building your game is your own step.
+- `output` selects the parent folder of the package; existing `<artifact-name>` outputs there
+  are replaced.
+- This action does not build your game: run your bundler in an earlier step. It sets up
+  Node.js only when the runner's is older than 20.19 (for roves-cli).
+- To package outside GitHub Actions, run the same CLI: `npx @drincs/roves-cli bundle -c dist`.
 
 ## Releasing this action
 

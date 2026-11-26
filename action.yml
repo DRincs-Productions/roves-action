@@ -5,10 +5,13 @@ branding:
   icon: 'package'
   color: 'purple'
 
-# Two engine pins, both hardcoded literals (see CLAUDE.md, "CRITICAL: keep the pinned engine
-# tags current"; `grep -n 'v0\.' action.yml` finds every occurrence):
-#   - DESKTOP PLAYER PIN (v0.9.0): the release whose roves_shell_<platform>[_steam|_mcp].zip
-#     CEF player assets the "Download the CEF player" step fetches. Nothing is compiled.
+# The packaging itself is @drincs/roves-cli (https://github.com/DRincs-Productions/roves-cli);
+# this action validates its inputs, installs the toolchains the mobile paths need, runs the CLI
+# and maps its --json result to the outputs. Three pins, all hardcoded literals (see CLAUDE.md,
+# "CRITICAL: keep the pins current"; `grep -n "v0\.\|ROVES_CLI_VERSION" action.yml` finds them):
+#   - ROVES CLI PIN (0.3.0): the exact @drincs/roves-cli version ("Install roves-cli" step).
+#   - DESKTOP PLAYER PIN (v0.9.0): the engine release whose roves_shell_<platform>[_steam|_mcp].zip
+#     CEF player assets `roves bundle --shell-version` downloads. Nothing is compiled.
 #   - MOBILE ENGINE PIN (v0.7.15): the Servo-era engine source checked out for `mach bundle
 #     --android` and the iOS paths ("Checkout Roves engine source (mobile)" step).
 
@@ -18,7 +21,7 @@ inputs:
     description: >-
       Path (relative to your repo root) to your already-built web content, e.g. a Vite/webpack
       dist/ folder, with index.html at its root. Building it is your own job, before this
-      action. On desktop it replaces the player's game/ folder. Required.
+      action. On desktop it becomes the player's game/ folder. Required.
     required: true
   icon-png:
     description: >-
@@ -173,35 +176,37 @@ inputs:
   # ── Packaging (this action's own convention) ──────────────────────────────────────────
   output:
     description: >-
-      Where the package is assembled, relative to your repo root (replaced if it exists).
-      Defaults to roves-bundle-output; it is renamed to artifact-name before zipping, see the
-      bundle-dir output.
+      Selects the output folder, relative to your repo root: the package and its zip are written
+      in this path's parent folder, named artifact-name (default roves-bundle-output, so the
+      repo root). See the bundle-dir output.
     required: false
     default: ''
   artifact-name:
     description: >-
       Base name for the zipped archive and the folder inside it (e.g. "my-game" produces
-      my-game.zip containing a my-game/ folder).
+      my-game.zip containing a my-game/ folder; on macOS the app bundle my-game.app).
     required: false
     default: 'roves-game'
 
 outputs:
   bundle-dir:
-    description: 'Absolute path to the unzipped package folder (named artifact-name).'
+    description: 'Absolute path to the unzipped package folder (named artifact-name; on macOS the app bundle artifact-name.app).'
     value: ${{ steps.package.outputs.bundle-dir }}
   archive-path:
     description: 'Absolute path to the zipped archive (<artifact-name>.zip).'
     value: ${{ steps.package.outputs.archive-path }}
   mcp-enabled:
     description: "'true' when the package contains the local MCP bridge (desktop, enable-mcp), otherwise 'false'."
-    value: ${{ steps.validate.outputs.mcp }}
+    value: ${{ steps.package.outputs.mcp-enabled }}
   icon-source:
     description: "Desktop only: where the icons came from, e.g. 'window project (game icon.png 512x512); executable project (ICO generated from game icon.png)'."
-    value: ${{ steps.icon.outputs.summary }}
+    value: ${{ steps.package.outputs.icon-source }}
 
 runs:
   using: 'composite'
   steps:
+    # The action's own contract: input values and combinations, checked before anything is
+    # installed or downloaded (roves-cli validates the same again).
     - name: Validate inputs
       id: validate
       shell: bash
@@ -238,7 +243,6 @@ runs:
         if [ "$IOS_RELEASE" = true ] && { [ "$IOS" != true ] || [ "$IOS_SIGNING" != true ]; }; then
           err "ios-release: 'true' requires ios: 'true' plus ios-certificate-p12-base64, ios-provisioning-profile-base64 and ios-team-id (and ios-certificate-p12-password unless the .p12 has none)"
         fi
-        mcp=false
         if [ "$ANDROID" = true ] || [ "$IOS" = true ]; then
           mode=$([ "$ANDROID" = true ] && echo android || echo ios)
           if [ "$STEAM" = true ] || [ "$ENABLE_MCP" = true ]; then err "steam/enable-mcp apply to the desktop CEF player only, not to $mode"; fi
@@ -251,173 +255,69 @@ runs:
             Windows) platform=windows ;; macOS) platform=macos ;; Linux) platform=linux ;;
             *) err "unsupported runner OS $RUNNER_OS"; platform=unknown ;;
           esac
-          suffix=''
-          [ "$STEAM" = true ] && suffix=_steam
-          if [ "$ENABLE_MCP" = true ]; then
-            if [ "$STEAM" = true ]; then err "enable-mcp and steam can't be combined: no Steam package with the MCP bridge is published"; fi
-            suffix=_mcp mcp=true
+          if [ "$ENABLE_MCP" = true ] && [ "$STEAM" = true ]; then
+            err "enable-mcp and steam can't be combined: no Steam package with the MCP bridge is published"
           fi
           echo "platform=$platform" >> "$GITHUB_OUTPUT"
-          echo "asset=roves_shell_${platform}${suffix}.zip" >> "$GITHUB_OUTPUT"
         fi
         echo "mode=$mode" >> "$GITHUB_OUTPUT"
-        echo "mcp=$mcp" >> "$GITHUB_OUTPUT"
         exit "$fail"
 
-    # Native absolute paths (`pwd -W` gives D:/a/... in Git Bash on Windows), usable from bash,
-    # pwsh, python and mach alike.
+    # `output` keeps its meaning: the package ends up next to it, renamed to artifact-name, so
+    # roves-cli writes into its parent folder.
     - name: Resolve paths
       id: paths
       shell: bash
       env:
         CONTENT_DIR: ${{ inputs.content-dir }}
-        ICON_PNG: ${{ inputs.icon-png }}
-        ICON_ICO: ${{ inputs.icon-ico }}
         OUTPUT: ${{ inputs.output }}
       run: |
         set -euo pipefail
         abs() { (cd "$1" && { pwd -W 2>/dev/null || pwd; }); }
-        file_abs() { echo "$(abs "$(dirname "$1")")/$(basename "$1")"; }
-        content="$(abs "$CONTENT_DIR")"
-        if [ ! -f "$content/index.html" ]; then echo "::error::content-dir $CONTENT_DIR has no index.html at its root"; exit 1; fi
-        echo "content-dir-abs=$content" >> "$GITHUB_OUTPUT"
-        [ -n "$ICON_PNG" ] && echo "icon-png-abs=$(file_abs "$ICON_PNG")" >> "$GITHUB_OUTPUT"
-        [ -n "$ICON_ICO" ] && echo "icon-ico-abs=$(file_abs "$ICON_ICO")" >> "$GITHUB_OUTPUT"
-        # The leaf never pre-exists: assemble.ps1, assemble.sh and support/ios/bundle.py
-        # create it themselves (mach bundle replaces it anyway).
+        if [ ! -f "$CONTENT_DIR/index.html" ]; then echo "::error::content-dir $CONTENT_DIR has no index.html at its root"; exit 1; fi
         out="${OUTPUT:-roves-bundle-output}"
         mkdir -p "$(dirname "$out")"
-        out="$(file_abs "$out")"
-        rm -rf "$out"
-        echo "output-abs=$out" >> "$GITHUB_OUTPUT"
-        echo "temp=$(abs "$RUNNER_TEMP")" >> "$GITHUB_OUTPUT"
-        echo "roves-src-abs=$(abs "$GITHUB_WORKSPACE")/roves-src" >> "$GITHUB_OUTPUT"
+        echo "out-dir=$(abs "$(dirname "$out")")" >> "$GITHUB_OUTPUT"
+        echo "roves-src=$(abs "$GITHUB_WORKSPACE")/roves-src" >> "$GITHUB_OUTPUT"
 
-    # ── Desktop: download the pinned CEF player and put the game in it ───────────────────
-    # DESKTOP PLAYER PIN: v0.9.0 in the URL below. Until that release is published the
-    # download fails with a clear error (this repo's own desktop CI jobs fail with it too).
-    - name: Download the CEF player (desktop)
-      id: base
-      if: steps.validate.outputs.mode == 'desktop'
+    # ── roves-cli: the packaging itself ──────────────────────────────────────────────────
+    # It needs Node.js >= 20.19. The runner's Node is used when it is recent enough, so a
+    # consumer's own setup-node is never overridden for the steps after this action.
+    - name: Check Node.js (roves-cli)
+      id: node
       shell: bash
-      env:
-        ASSET: ${{ steps.validate.outputs.asset }}
-        TEMP_DIR: ${{ steps.paths.outputs.temp }}
       run: |
-        set -euo pipefail
-        url="https://github.com/DRincs-Productions/roves/releases/download/v0.9.0/$ASSET"
-        zip="$TEMP_DIR/roves-cef-base.zip"
-        base="$TEMP_DIR/roves-cef-base"
-        rm -rf "$base" "$zip"
-        mkdir -p "$base"
-        echo "Downloading $url"
-        if ! curl -fSL --retry 5 --retry-delay 5 --retry-all-errors "$url" -o "$zip"; then
-          echo "::error::cannot download $url (is the pinned Roves release v0.9.0 published with $ASSET?)"
-          exit 1
+        if node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>20||(a===20&&b>=19)?0:1)' 2>/dev/null; then
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "ok=false" >> "$GITHUB_OUTPUT"
         fi
-        # Extractors that keep what the asset stores: ditto keeps the .app's symlinks and
-        # modes, Info-ZIP unzip keeps the Linux execute bits.
-        case "$RUNNER_OS" in
-          Windows) ZIP="$zip" DEST="$base" pwsh -NoProfile -Command 'Expand-Archive -LiteralPath $env:ZIP -DestinationPath $env:DEST -Force' ;;
-          macOS) ditto -x -k "$zip" "$base" ;;
-          Linux) unzip -q "$zip" -d "$base" ;;
-        esac
-        rm -f "$zip"
-        echo "dir=$base" >> "$GITHUB_OUTPUT"
-        echo "note=$url" >> "$GITHUB_OUTPUT"
 
-    # Project icon contract (engine support/cef-netrender-probe/README.md, "Project icon"):
-    # cef/project_icon.py is an identical copy of the engine's script and resolves the same
-    # sources on every platform (game icon first, Roves icon as the fallback); Pillow and
-    # electron/rcedit are pinned exactly as in the engine workflow.
-    - name: Set up Python (project icon, desktop)
-      if: steps.validate.outputs.mode == 'desktop'
-      uses: actions/setup-python@v5
+    - name: Setup Node.js (roves-cli)
+      if: steps.node.outputs.ok != 'true'
+      uses: actions/setup-node@v4
       with:
-        python-version: '3.12'
+        node-version: '22'
 
-    - name: Resolve the project icon (desktop)
-      id: icon
-      if: steps.validate.outputs.mode == 'desktop'
+    # ROVES CLI PIN: the exact @drincs/roves-cli version, in this single place.
+    - name: Install roves-cli
+      id: cli
       shell: bash
       env:
-        CONTENT: ${{ steps.paths.outputs.content-dir-abs }}
-        ICON_PNG: ${{ steps.paths.outputs.icon-png-abs }}
-        ICON_ICO: ${{ steps.paths.outputs.icon-ico-abs }}
-        TEMP_DIR: ${{ steps.paths.outputs.temp }}
-        BASE: ${{ steps.base.outputs.dir }}
+        ROVES_CLI_VERSION: '0.3.0'
       run: |
         set -euo pipefail
-        tools="$TEMP_DIR/roves-cef-icon"
-        rm -rf "$tools"
-        mkdir -p "$tools"
-        python -m pip install --disable-pip-version-check --only-binary=:all: 'pillow==11.3.0'
-        rcedit='' fallback=''
-        if [ "$RUNNER_OS" = Windows ]; then
-          rcedit="$tools/rcedit-x64.exe"
-          curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors -o "$rcedit" \
-            https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe
-          hash="$(sha256sum "$rcedit" | cut -d' ' -f1)"
-          if [ "$hash" != 3e7801db1a5edbec91b49a24a094aad776cb4515488ea5a4ca2289c400eade2a ]; then
-            echo "::error::rcedit-x64.exe SHA-256 $hash does not match the pin"; exit 1
-          fi
-          # The player's own Roves icon, used for play.exe when the game has none.
-          for candidate in "$BASE/roves.ico" "$BASE"/*/roves.ico; do
-            if [ -f "$candidate" ] && [ -f "$(dirname "$candidate")/play.exe" ]; then fallback="$candidate"; break; fi
-          done
-        fi
-        python -I "$GITHUB_ACTION_PATH/cef/project_icon.py" --content "$CONTENT" --out "$tools/resolved" \
-          --icon-png "$ICON_PNG" --icon-ico "$ICON_ICO" --fallback-ico "$fallback"
-        while IFS='=' read -r key value; do
-          case "$key" in
-            window_source) ws="$value" ;; window_detail) wd="$value" ;;
-            exe_source) es="$value" ;; exe_detail) ed="$value" ;;
-          esac
-        done < "$tools/resolved/result.env"
-        summary="window $ws ($wd)"
-        # play.ico only matters on Windows; elsewhere the window PNG is the whole contract.
-        [ "$RUNNER_OS" = Windows ] && summary="$summary; executable $es ($ed)"
-        echo "dir=$tools/resolved" >> "$GITHUB_OUTPUT"
-        echo "rcedit=$rcedit" >> "$GITHUB_OUTPUT"
-        echo "summary=$summary" >> "$GITHUB_OUTPUT"
+        prefix="$RUNNER_TEMP/roves-cli"
+        rm -rf "$prefix"
+        mkdir -p "$prefix"
+        npm install --prefix "$prefix" --no-audit --no-fund --loglevel=error "@drincs/roves-cli@$ROVES_CLI_VERSION"
+        cli="$prefix/node_modules/@drincs/roves-cli/dist/cli.mjs"
+        node "$cli" --version
+        echo "cli=$cli" >> "$GITHUB_OUTPUT"
 
-    - name: Assemble the CEF player package (Windows)
-      if: steps.validate.outputs.mode == 'desktop' && runner.os == 'Windows'
-      shell: pwsh
-      env:
-        BASE: ${{ steps.base.outputs.dir }}
-        BASE_NOTE: ${{ steps.base.outputs.note }}
-        CONTENT: ${{ steps.paths.outputs.content-dir-abs }}
-        OUT: ${{ steps.paths.outputs.output-abs }}
-        ENABLE_MCP: ${{ inputs.enable-mcp }}
-        STEAM: ${{ inputs.steam }}
-        ICON_DIR: ${{ steps.icon.outputs.dir }}
-        RCEDIT: ${{ steps.icon.outputs.rcedit }}
-        ICON_NOTE: ${{ steps.icon.outputs.summary }}
-      run: |
-        $ErrorActionPreference = 'Stop'
-        & (Join-Path $env:GITHUB_ACTION_PATH 'cef/assemble.ps1') -BaseDir $env:BASE -ContentDir $env:CONTENT `
-          -OutDir $env:OUT -EnableMcp $env:ENABLE_MCP -BaseNote $env:BASE_NOTE `
-          -IconDir $env:ICON_DIR -Rcedit $env:RCEDIT -IconNote $env:ICON_NOTE
-        $steamDll = Test-Path -LiteralPath (Join-Path $env:OUT 'steam_api64.dll') -PathType Leaf
-        if ($steamDll -ne ($env:STEAM -eq 'true')) { throw "steam is '$env:STEAM' but the package $(if ($steamDll) { 'contains' } else { 'lacks' }) steam_api64.dll" }
-
-    - name: Assemble the CEF player package (macOS/Linux)
-      if: steps.validate.outputs.mode == 'desktop' && runner.os != 'Windows'
-      shell: bash
-      env:
-        PLATFORM: ${{ steps.validate.outputs.platform }}
-        BASE: ${{ steps.base.outputs.dir }}
-        CONTENT: ${{ steps.paths.outputs.content-dir-abs }}
-        OUT: ${{ steps.paths.outputs.output-abs }}
-        STEAM: ${{ inputs.steam }}
-        ICON_DIR: ${{ steps.icon.outputs.dir }}
-        ENABLE_MCP: ${{ inputs.enable-mcp }}
-      run: bash "$GITHUB_ACTION_PATH/cef/assemble.sh" "$PLATFORM" "$BASE" "$CONTENT" "$OUT" "$STEAM" "$ICON_DIR" "$ENABLE_MCP"
-
-    # ── Android/iOS: the Servo-era engine's mobile tooling ────────────────────────────────
+    # ── Android/iOS toolchains: installed here, then roves-cli detects and uses them ─────
     # MOBILE ENGINE PIN: v0.7.15. That tag still has `mach bundle --android`/`--ios` and
-    # support/ios/bundle.py; the desktop pin above has no mach desktop packaging at all.
+    # support/ios/bundle.py; roves-cli runs them from this checkout (--engine-dir).
     - name: Checkout Roves engine source (mobile)
       if: steps.validate.outputs.mode != 'desktop'
       uses: actions/checkout@v4
@@ -435,12 +335,6 @@ runs:
     - name: Setup uv (needed by ./mach, mobile)
       if: steps.validate.outputs.mode != 'desktop'
       uses: astral-sh/setup-uv@v5
-
-    - name: Prefetch pinned rust toolchain (mobile)
-      if: steps.validate.outputs.mode != 'desktop'
-      shell: bash
-      working-directory: roves-src
-      run: rustup show
 
     # `mach bundle --android` compiles nothing (no NDK, no Rust cross-compile): only a JDK and
     # the Android SDK platform/build-tools are needed, for Gradle. Mirrors the engine's own
@@ -488,152 +382,95 @@ runs:
         distribution: 'temurin'
         java-version: '17'
 
-    # Windows: mach bootstrap's GStreamer MSI installer waits on a UAC prompt forever on a
-    # non-interactive runner, so --skip-platform there.
-    - name: mach bootstrap (android='true' only)
-      if: inputs.android == 'true' && inputs.bootstrap == 'true'
-      shell: bash
-      working-directory: roves-src
-      run: |
-        set -euo pipefail
-        if [ "$RUNNER_OS" = "Windows" ]; then
-          ./mach bootstrap --force --yes --skip-lints --skip-nextest --skip-platform
-        else
-          ./mach bootstrap --force --yes --skip-lints --skip-nextest
-        fi
-
-    - name: mach bundle --android
-      if: inputs.android == 'true'
-      shell: bash
-      working-directory: roves-src
-      env:
-        CONTENT: ${{ steps.paths.outputs.content-dir-abs }}
-        OUT: ${{ steps.paths.outputs.output-abs }}
-        ICON_PNG: ${{ steps.paths.outputs.icon-png-abs }}
-        APP_NAME: ${{ inputs.android-app-name }}
-        ORIENTATION: ${{ inputs.android-orientation }}
-        THEME_COLOR: ${{ inputs.android-theme-color }}
-        RELEASE: ${{ inputs.android-release }}
-        KEYSTORE_B64: ${{ inputs.android-keystore-base64 }}
-        KEYSTORE_PASS: ${{ inputs.android-keystore-password }}
-        KEY_ALIAS: ${{ inputs.android-key-alias }}
-        KEY_PASS: ${{ inputs.android-key-password }}
-      run: |
-        set -euo pipefail
-        args=(--android --content-dir "$CONTENT" --output "$OUT")
-        [ -n "$ICON_PNG" ] && args+=(--icon-png "$ICON_PNG")
-        [ -n "$APP_NAME" ] && args+=(--android-app-name "$APP_NAME")
-        [ -n "$ORIENTATION" ] && args+=(--android-orientation "$ORIENTATION")
-        [ -n "$THEME_COLOR" ] && args+=(--android-theme-color "$THEME_COLOR")
-        # Release signing: the 4 env vars the Gradle project's getSigningKeyInfo reads.
-        if [ "$RELEASE" = true ]; then
-          keystore="$RUNNER_TEMP/roves-android-release.keystore"
-          trap 'rm -f "$keystore"' EXIT
-          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$keystore"
-          export APK_SIGNING_KEY_STORE_PATH="$keystore" APK_SIGNING_KEY_STORE_PASS="$KEYSTORE_PASS"
-          export APK_SIGNING_KEY_ALIAS="$KEY_ALIAS" APK_SIGNING_KEY_PASS="$KEY_PASS"
-          args+=(--android-release)
-        fi
-        echo "./mach bundle ${args[*]}"
-        ./mach bundle "${args[@]}"
-
     - name: Install XcodeGen (ios='true' only)
       if: inputs.ios == 'true'
       shell: bash
       run: brew install xcodegen
 
-    # Default iOS path: the raw, ready-to-open .xcodeproj to sign yourself in Xcode.
-    - name: iOS bundle (support/ios/bundle.py + xcodegen generate)
-      if: inputs.ios == 'true' && inputs.ios-release != 'true'
-      shell: bash
-      env:
-        CONTENT: ${{ steps.paths.outputs.content-dir-abs }}
-        OUT: ${{ steps.paths.outputs.output-abs }}
-        SRC: ${{ steps.paths.outputs.roves-src-abs }}
-        APP_NAME: ${{ inputs.ios-app-name }}
-        BUNDLE_ID: ${{ inputs.ios-bundle-id }}
-      run: |
-        set -euo pipefail
-        args=(--content-dir "$CONTENT" --output "$OUT")
-        [ -n "$APP_NAME" ] && args+=(--app-name "$APP_NAME")
-        [ -n "$BUNDLE_ID" ] && args+=(--bundle-id "$BUNDLE_ID")
-        python3 "$SRC/support/ios/bundle.py" "${args[@]}"
-        (cd "$OUT" && xcodegen generate --spec project.json)
-
-    # Unsigned and Simulator-only (a device always needs an Apple signing identity). Built in a
-    # scratch derivedDataPath; only the final .app is copied next to the project.
-    - name: iOS Simulator build (unsigned, for a quick look without touching Xcode)
-      if: inputs.ios == 'true' && inputs.ios-release != 'true'
-      shell: bash
-      env:
-        OUT: ${{ steps.paths.outputs.output-abs }}
-      run: |
-        set -euo pipefail
-        BUILD_DIR="$(mktemp -d)"
-        (cd "$OUT" && \
-          xcodebuild -project RovesGame.xcodeproj -scheme RovesGame \
-            -configuration Debug -sdk iphonesimulator -derivedDataPath "$BUILD_DIR" \
-            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
-            build)
-        APP_PATH=$(find "$BUILD_DIR/Build/Products" -maxdepth 2 -iname '*.app' | head -1)
-        if [ -z "$APP_PATH" ]; then
-          echo "::error::no .app found under $BUILD_DIR/Build/Products after the Simulator build -- contents:"
-          find "$BUILD_DIR/Build/Products"
-          exit 1
-        fi
-        cp -R "$APP_PATH" "$OUT/$(basename "$APP_PATH")"
-        rm -rf "$BUILD_DIR"
-
-    # ios-release='true': a signed .ipa through `mach bundle --ios --ios-release`; the secrets
-    # are decoded to temporary files, as for the Android keystore.
-    - name: mach bundle --ios --ios-release
-      if: inputs.ios == 'true' && inputs.ios-release == 'true'
-      shell: bash
-      working-directory: roves-src
-      env:
-        CONTENT: ${{ steps.paths.outputs.content-dir-abs }}
-        OUT: ${{ steps.paths.outputs.output-abs }}
-        APP_NAME: ${{ inputs.ios-app-name }}
-        BUNDLE_ID: ${{ inputs.ios-bundle-id }}
-        CERT_B64: ${{ inputs.ios-certificate-p12-base64 }}
-        PROFILE_B64: ${{ inputs.ios-provisioning-profile-base64 }}
-        IOS_SIGNING_CERTIFICATE_P12_PASSWORD: ${{ inputs.ios-certificate-p12-password }}
-        IOS_SIGNING_TEAM_ID: ${{ inputs.ios-team-id }}
-      run: |
-        set -euo pipefail
-        export IOS_SIGNING_CERTIFICATE_P12_PATH="$RUNNER_TEMP/roves-ios-certificate.p12"
-        export IOS_SIGNING_PROVISIONING_PROFILE_PATH="$RUNNER_TEMP/roves-ios-profile.mobileprovision"
-        trap 'rm -f "$IOS_SIGNING_CERTIFICATE_P12_PATH" "$IOS_SIGNING_PROVISIONING_PROFILE_PATH"' EXIT
-        printf '%s' "$CERT_B64" | base64 --decode > "$IOS_SIGNING_CERTIFICATE_P12_PATH"
-        printf '%s' "$PROFILE_B64" | base64 --decode > "$IOS_SIGNING_PROVISIONING_PROFILE_PATH"
-        args=(--ios --ios-release --content-dir "$CONTENT" --output "$OUT")
-        [ -n "$APP_NAME" ] && args+=(--ios-app-name "$APP_NAME")
-        [ -n "$BUNDLE_ID" ] && args+=(--ios-bundle-id "$BUNDLE_ID")
-        echo "./mach bundle ${args[*]}"
-        ./mach bundle "${args[@]}"
-
-    # One named folder per archive, never loose files at the archive root. ditto on macOS keeps
-    # the .app's symlinks and modes; zip -y on Linux keeps symlinks, Info-ZIP stores the modes.
-    - name: Package (zip)
+    # ── Package with roves-cli ───────────────────────────────────────────────────────────
+    # Desktop: `roves bundle` downloads the CEF player of the DESKTOP PLAYER PIN (v0.9.0 in the
+    # --shell-version argument below), verifies it, adds the game, applies the project icon and
+    # zips it. Android: `roves android` runs `rustup show` (when present), `mach bootstrap`
+    # (unless bootstrap is 'false'; --skip-platform on Windows) and `mach bundle --android`.
+    # iOS: `roves ios` runs support/ios/bundle.py + XcodeGen + the unsigned Simulator build, or
+    # `mach bundle --ios --ios-release`. Signing secrets reach the CLI through environment
+    # variables only, never the command line.
+    - name: Package with roves-cli
       id: package
       shell: bash
       env:
-        OUT: ${{ steps.paths.outputs.output-abs }}
+        CLI: ${{ steps.cli.outputs.cli }}
+        MODE: ${{ steps.validate.outputs.mode }}
+        PLATFORM: ${{ steps.validate.outputs.platform }}
+        OUT_DIR: ${{ steps.paths.outputs.out-dir }}
+        ROVES_SRC: ${{ steps.paths.outputs.roves-src }}
+        CONTENT: ${{ inputs.content-dir }}
         NAME: ${{ inputs.artifact-name }}
+        ICON_PNG: ${{ inputs.icon-png }}
+        ICON_ICO: ${{ inputs.icon-ico }}
+        STEAM: ${{ inputs.steam }}
+        ENABLE_MCP: ${{ inputs.enable-mcp }}
+        BOOTSTRAP: ${{ inputs.bootstrap }}
+        APP_NAME: ${{ inputs.android-app-name }}
+        ORIENTATION: ${{ inputs.android-orientation }}
+        THEME_COLOR: ${{ inputs.android-theme-color }}
+        ANDROID_RELEASE: ${{ inputs.android-release }}
+        ROVES_ANDROID_KEYSTORE_BASE64: ${{ inputs.android-keystore-base64 }}
+        ROVES_ANDROID_KEYSTORE_PASSWORD: ${{ inputs.android-keystore-password }}
+        ROVES_ANDROID_KEY_ALIAS: ${{ inputs.android-key-alias }}
+        ROVES_ANDROID_KEY_PASSWORD: ${{ inputs.android-key-password }}
+        IOS_APP_NAME: ${{ inputs.ios-app-name }}
+        IOS_BUNDLE_ID: ${{ inputs.ios-bundle-id }}
+        IOS_RELEASE: ${{ inputs.ios-release }}
+        ROVES_IOS_CERTIFICATE_P12_BASE64: ${{ inputs.ios-certificate-p12-base64 }}
+        ROVES_IOS_CERTIFICATE_P12_PASSWORD: ${{ inputs.ios-certificate-p12-password }}
+        ROVES_IOS_PROVISIONING_PROFILE_BASE64: ${{ inputs.ios-provisioning-profile-base64 }}
+        ROVES_IOS_TEAM_ID: ${{ inputs.ios-team-id }}
       run: |
         set -euo pipefail
-        parent="$(dirname "$OUT")"
-        named="$parent/$NAME"
-        if [ "$OUT" != "$named" ]; then
-          rm -rf "$named"
-          mv "$OUT" "$named"
-        fi
-        zip_path="$parent/$NAME.zip"
-        rm -f "$zip_path"
-        case "$RUNNER_OS" in
-          Windows) SRC="$named" ZIP="$zip_path" pwsh -NoProfile -Command 'Compress-Archive -LiteralPath $env:SRC -DestinationPath $env:ZIP -Force' ;;
-          macOS) ditto -c -k --keepParent "$named" "$zip_path" ;;
-          *) (cd "$parent" && zip -qry "$NAME.zip" "$NAME") ;;
+        result="$RUNNER_TEMP/roves-cli-result.json"
+        common=(--content-dir "$CONTENT" --name "$NAME" --out-dir "$OUT_DIR" --json)
+        case "$MODE" in
+          desktop)
+            args=(bundle --platform "$PLATFORM" --shell-version v0.9.0 "${common[@]}")
+            [ -n "$ICON_PNG" ] && args+=(--icon-png "$ICON_PNG")
+            [ -n "$ICON_ICO" ] && args+=(--icon-ico "$ICON_ICO")
+            [ "$STEAM" = true ] && args+=(--steam)
+            [ "$ENABLE_MCP" = true ] && args+=(--enable-mcp)
+            :
+            ;;
+          android)
+            args=(android --engine-dir "$ROVES_SRC" "${common[@]}")
+            [ -n "$ICON_PNG" ] && args+=(--icon-png "$ICON_PNG")
+            [ -n "$APP_NAME" ] && args+=(--app-name "$APP_NAME")
+            [ -n "$ORIENTATION" ] && args+=(--orientation "$ORIENTATION")
+            [ -n "$THEME_COLOR" ] && args+=(--theme-color "$THEME_COLOR")
+            [ "$BOOTSTRAP" = false ] && args+=(--no-bootstrap)
+            [ "$ANDROID_RELEASE" = true ] && args+=(--release)
+            :
+            ;;
+          ios)
+            args=(ios --engine-dir "$ROVES_SRC" "${common[@]}")
+            [ -n "$IOS_APP_NAME" ] && args+=(--app-name "$IOS_APP_NAME")
+            [ -n "$IOS_BUNDLE_ID" ] && args+=(--bundle-id "$IOS_BUNDLE_ID")
+            [ "$IOS_RELEASE" = true ] && args+=(--release)
+            :
+            ;;
         esac
-        echo "bundle-dir=$named" >> "$GITHUB_OUTPUT"
-        echo "archive-path=$zip_path" >> "$GITHUB_OUTPUT"
+        echo "roves ${args[*]}"
+        node "$CLI" "${args[@]}" > "$result"
+        # Desktop prints an array with one result per platform, mobile a single object.
+        RESULT="$result" node -e '
+          const fs = require("node:fs");
+          const json = JSON.parse(fs.readFileSync(process.env.RESULT, "utf8"));
+          const r = Array.isArray(json) ? json[0] : json;
+          const out = [
+            `bundle-dir=${r.bundleDir ?? ""}`,
+            `archive-path=${r.archivePath}`,
+            `mcp-enabled=${r.mcpEnabled === true}`,
+            `icon-source=${r.iconSource ?? ""}`,
+          ];
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `${out.join("\n")}\n`);
+          for (const w of r.warnings ?? []) console.log(`::warning::${w}`);
+          if (r.iconSource) console.log(`::notice::project icon: ${r.iconSource}`);
+        '

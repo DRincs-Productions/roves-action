@@ -119,8 +119,8 @@ foreach ($line in $provenance) {
 while ($lines.Count -and -not $lines[$lines.Count - 1].Trim()) { $lines.RemoveAt($lines.Count - 1) }
 $lines.Add('')
 $lines.Add('Game replaced by DRincs-Productions/roves-action')
-$lines.Add('  game\ contains the developer''s own build output, not the sample game described in')
-$lines.Add('  the "Game" section above; the sample game''s provenance files were removed. The')
+$lines.Add('  game\ contains the developer''s own build output; any sample game of the base package')
+$lines.Add('  and its provenance files were removed. The')
 if ($exeIcon -eq 'replaced') {
   $lines.Add('  engine files (play.exe, play.dll, CEF runtime) are the base package''s; only play.exe''s')
   $lines.Add('  icon resource was replaced (electron/rcedit v2.0.0).')

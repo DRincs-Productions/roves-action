@@ -41,12 +41,12 @@ if [ "$platform" = macos ]; then
   exe="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")" || fail "$plist has no CFBundleExecutable"
   icns="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$plist")" || fail "$plist has no CFBundleIconFile"
   icns="Contents/Resources/${icns%.icns}.icns"
-  required=("Contents/MacOS/$exe" "Contents/Frameworks/Chromium Embedded Framework.framework" "$icns" Contents/Resources/game/index.html)
+  required=("Contents/MacOS/$exe" "Contents/Frameworks/Chromium Embedded Framework.framework" "$icns")
   steam_lib=Contents/MacOS/libsteam_api.dylib game=Contents/Resources/game window_icon=Contents/Resources/icon.png
   mcp_dir=Contents/Resources/mcp
   root="$out/$(basename "$player")"
 else
-  required=(libcef.so chrome-sandbox icudtl.dat resources.pak game/index.html)
+  required=(libcef.so chrome-sandbox icudtl.dat resources.pak)
   steam_lib=libsteam_api.so game=game window_icon=icon.png mcp_dir=mcp
   root="$out"
   [ -x "$player/chrome-sandbox" ] || fail "chrome-sandbox lost its execute bit: the release asset was not extracted with its modes"

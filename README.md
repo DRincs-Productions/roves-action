@@ -315,10 +315,10 @@ What the action does with it:
    bit, `icudtl.dat`, `resources.pak`), and the Steam redistributable is present exactly when
    `steam` is `'true'`. With `enable-mcp`, every platform also needs a complete `mcp/` folder.
    A mismatch fails the run.
-2. **Replace the game.** The sample game is removed and `content-dir` is copied into
-   `game/` unchanged. The engine files are never modified, except for the icons below.
+2. **Add the game.** The release assets are the player shell only (from v0.9.0); `content-dir` is
+   copied into `game/` unchanged. The engine files are never modified, except for the icons below.
 3. **Apply the project icon** ([Project icon](#project-icon)).
-4. **Windows only:** drop the sample game's provenance, append a "game replaced" note to
+4. **Windows only:** drop any sample-game provenance, append a "game replaced" note to
    `PROVENANCE.txt` and regenerate `SHA256SUMS.txt` (`cef/assemble.ps1`).
 5. **Zip** one named folder: `Compress-Archive` on Windows, `ditto` on macOS (keeps the
    framework symlinks), `zip -y` on Linux (keeps symlinks and execute bits).

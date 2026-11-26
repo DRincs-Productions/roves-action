@@ -6,8 +6,8 @@ Packages your already-built web game as a native app with
 - **Desktop (Windows, macOS, Linux): the Roves CEF player, release v0.9.0.** The action
   downloads the prebuilt player for the runner's platform, verifies it, puts your game in its
   `game/` folder, applies your game's icon and zips the result. Nothing is compiled. The
-  standard and Steam variants exist for every platform; Windows also has an opt-in
-  MCP-enabled development package.
+  standard and Steam variants exist for every platform, plus an opt-in MCP-enabled
+  development package for each.
 - **Android and iOS (experimental): the native WebView path** of the Roves engine at
   v0.7.15 (`mach bundle --android`, `support/ios/bundle.py`/`mach bundle --ios`), unchanged.
 
@@ -127,7 +127,7 @@ jobs:
     icon-ico: assets/icon.ico # Windows play.exe; generated from icon-png when omitted
 ```
 
-**A Windows playtest build an AI agent can drive** (never ship it to players, see
+**A playtest build an AI agent can drive** (any desktop runner) (never ship it to players, see
 [Local MCP bridge](#local-mcp-bridge-enable-mcp)):
 
 ```yml
@@ -135,7 +135,7 @@ jobs:
   with:
     content-dir: dist
     enable-mcp: 'true'
-    artifact-name: my-game_windows_mcp
+    artifact-name: my-game_${{ runner.os }}_mcp
 ```
 
 **An Android APK** (any Linux runner, nothing compiled):
@@ -181,8 +181,8 @@ jobs:
     # default: false
     steam: false
 
-    # Windows only: package the MCP-enabled development player. Never ship it to players.
-    # Cannot be combined with steam.
+    # Desktop only (Windows, macOS, Linux): package the MCP-enabled development player.
+    # Never ship it to players. Cannot be combined with steam.
     #
     # default: false
     enable-mcp: false
@@ -300,10 +300,12 @@ your package from it:
 | Windows (x64) | `false` | `false` | `roves_shell_windows.zip` | `play.exe`, `play.dll`, `libcef.dll` and the CEF runtime, `game\`, `PROVENANCE.txt`, `SHA256SUMS.txt` |
 | Windows (x64) | `true` | `false` | `roves_shell_windows_steam.zip` | the same plus `steam_api64.dll` |
 | Windows (x64) | `false` | `true` | `roves_shell_windows_mcp.zip` | the same plus `mcp\` (development only) |
-| macOS (arm64) | `false` | - | `roves_shell_macos.zip` | `roves-cef-macos-gate.app`, game in `Contents/Resources/game` |
-| macOS (arm64) | `true` | - | `roves_shell_macos_steam.zip` | the same plus `Contents/MacOS/libsteam_api.dylib` |
-| Linux (x64) | `false` | - | `roves_shell_linux.zip` | the executable, `libcef.so`, `chrome-sandbox`, `game/` |
-| Linux (x64) | `true` | - | `roves_shell_linux_steam.zip` | the same plus `libsteam_api.so` |
+| macOS (arm64) | `false` | `false` | `roves_shell_macos.zip` | `roves-cef-macos-gate.app`, game in `Contents/Resources/game` |
+| macOS (arm64) | `true` | `false` | `roves_shell_macos_steam.zip` | the same plus `Contents/MacOS/libsteam_api.dylib` |
+| macOS (arm64) | `false` | `true` | `roves_shell_macos_mcp.zip` | the same as standard plus `Contents/Resources/mcp/` (development only) |
+| Linux (x64) | `false` | `false` | `roves_shell_linux.zip` | the executable, `libcef.so`, `chrome-sandbox`, `game/` |
+| Linux (x64) | `true` | `false` | `roves_shell_linux_steam.zip` | the same plus `libsteam_api.so` |
+| Linux (x64) | `false` | `true` | `roves_shell_linux_mcp.zip` | the same as standard plus `mcp/` (development only) |
 
 What the action does with it:
 
@@ -311,7 +313,8 @@ What the action does with it:
    missing, changed or unlisted). macOS/Linux: the documented files are present (the `.app`'s
    executable, the CEF framework and icon; `libcef.so`, `chrome-sandbox` with its execute
    bit, `icudtl.dat`, `resources.pak`), and the Steam redistributable is present exactly when
-   `steam` is `'true'`. A mismatch fails the run.
+   `steam` is `'true'`. With `enable-mcp`, every platform also needs a complete `mcp/` folder.
+   A mismatch fails the run.
 2. **Replace the game.** The sample game is removed and `content-dir` is copied into
    `game/` unchanged. The engine files are never modified, except for the icons below.
 3. **Apply the project icon** ([Project icon](#project-icon)).
@@ -369,17 +372,20 @@ the standard package.
 
 ### Local MCP bridge (`enable-mcp`)
 
-Windows only, default `'false'`. With `'true'` the action packages
-`roves_shell_windows_mcp.zip`: an AI agent or IDE connected through MCP (Model Context
+Desktop only (Windows, macOS, Linux), default `'false'`. With `'true'` the action packages
+`roves_shell_<platform>_mcp.zip`: an AI agent or IDE connected through MCP (Model Context
 Protocol) can read the running game's state and console, run JavaScript in the page, click,
-press keys and type — useful for automated playtests. The bridge listens only on a local
-Windows named pipe protected by a per-session token, but any program running as the same
-Windows user can control the game: **development only, never ship that package to players**.
-The action requires a complete MCP package (`mcp\enabled`, `mcp\server.mjs`, `mcp\README.md`,
-the MCP server dependency and the MCP section of `PROVENANCE.txt`) and never adds MCP files
-itself. With `'false'` the output never contains `mcp\` (no activation marker, no server).
-See `mcp\README.md` inside the package for connecting a client. `enable-mcp` with `steam`, or
-on macOS/Linux, fails the run: no such package is published.
+press keys and type — useful for automated playtests. The `mcp/` folder sits next to `game/`:
+next to `play.exe` on Windows, in `<name>.app/Contents/Resources/` on macOS, next to the
+executable on Linux. The bridge opens no network port: it listens only on a local endpoint
+(a named pipe on Windows, a unix socket in a private per-user directory on macOS/Linux)
+protected by a per-session token, but any program running as the same user can control the
+game: **development only, never ship that package to players**. The action requires a
+complete MCP package (`mcp/enabled`, `mcp/server.mjs`, `mcp/README.md`, the MCP server
+dependency and, on Windows, the MCP section of `PROVENANCE.txt`) and never adds MCP files
+itself. With `'false'` the output never contains `mcp/` (no activation marker, no server).
+See `mcp/README.md` inside the package for connecting a client. `enable-mcp` with `steam`
+(or with `android`/`ios`) fails the run: no such package is published.
 
 ## Android and iOS
 

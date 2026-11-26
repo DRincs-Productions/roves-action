@@ -1,20 +1,26 @@
 #!/usr/bin/env bash
 # Usage: assemble.sh <macos|linux> <base-dir> <content-dir> <out-dir> <steam: true|false> <icon-dir>
+#                    <mcp: true|false>
 #
 # macOS/Linux counterpart of assemble.ps1 (../README.md, "Desktop: the CEF player"): turns an
-# extracted roves_shell_<macos|linux>[_steam].zip release asset into the developer's package.
+# extracted roves_shell_<macos|linux>[_steam|_mcp].zip release asset into the developer's package.
 #
 #   1. Locate the player in <base-dir> (macOS: the only .app; Linux: the only folder with
 #      libcef.so) and check the files the engine documents (support/cef-macos-gate/README.md,
 #      support/cef-linux-gate/README.md), with the Steam redistributable exactly when <steam>.
-#   2. Copy it to <out-dir> unchanged, keeping modes and symlinks (ditto / cp -a).
+#      <mcp>: require a complete MCP-enabled base (engine support/cef-netrender-probe/mcp/
+#      README.md): mcp/enabled, mcp/server.mjs, mcp/README.md and the
+#      @modelcontextprotocol/server dependency, in the folder that holds game/ (macOS
+#      Contents/Resources/mcp, Linux mcp/ next to the executable). Never add MCP files of our own.
+#   2. Copy it to <out-dir> unchanged, keeping modes and symlinks (ditto / cp -a); without
+#      <mcp>, drop that mcp/ folder, so the output never contains the bridge.
 #   3. Replace game/ with <content-dir>.
 #   4. Project icon (<icon-dir>, written by project_icon.py): the base's icon.png is dropped; a
 #      resolved icon.png becomes the window icon and, on macOS, the bundle icon (icns.sh, an
 #      identical copy of the engine's packaging/icns.sh, replaces the file CFBundleIconFile
 #      names). Without a project icon the player keeps the Roves icons.
 set -euo pipefail
-platform="$1" base="$2" content="$3" out="$4" steam="$5" icons="$6"
+platform="$1" base="$2" content="$3" out="$4" steam="$5" icons="$6" mcp="${7:-false}"
 here="$(cd "$(dirname "$0")" && pwd)"
 fail() { echo "::error::$*" >&2; exit 1; }
 
@@ -37,10 +43,11 @@ if [ "$platform" = macos ]; then
   icns="Contents/Resources/${icns%.icns}.icns"
   required=("Contents/MacOS/$exe" "Contents/Frameworks/Chromium Embedded Framework.framework" "$icns" Contents/Resources/game/index.html)
   steam_lib=Contents/MacOS/libsteam_api.dylib game=Contents/Resources/game window_icon=Contents/Resources/icon.png
+  mcp_dir=Contents/Resources/mcp
   root="$out/$(basename "$player")"
 else
   required=(libcef.so chrome-sandbox icudtl.dat resources.pak game/index.html)
-  steam_lib=libsteam_api.so game=game window_icon=icon.png
+  steam_lib=libsteam_api.so game=game window_icon=icon.png mcp_dir=mcp
   root="$out"
   [ -x "$player/chrome-sandbox" ] || fail "chrome-sandbox lost its execute bit: the release asset was not extracted with its modes"
 fi
@@ -49,11 +56,18 @@ for rel in "${required[@]}"; do
 done
 if [ "$steam" = true ] && [ ! -f "$player/$steam_lib" ]; then fail "the Steam asset lacks $steam_lib"; fi
 if [ "$steam" != true ] && [ -e "$player/$steam_lib" ]; then fail "the standard asset unexpectedly contains $steam_lib"; fi
-echo "::notice::CEF $platform base package checked (${#required[@]} required entries, Steam $steam)"
+if [ "$mcp" = true ]; then
+  for rel in enabled server.mjs README.md node_modules/@modelcontextprotocol/server/package.json; do
+    [ -f "$player/$mcp_dir/$rel" ] ||
+      fail "enable-mcp is true, but the CEF base package is not a complete MCP-enabled package (lacks $mcp_dir/$rel; it needs the roves_shell_${platform}_mcp.zip release asset)"
+  done
+fi
+echo "::notice::CEF $platform base package checked (${#required[@]} required entries, Steam $steam, MCP $mcp)"
 
 # 2. Copy.
 mkdir -p "$out"
 if [ "$platform" = macos ]; then ditto "$player" "$root"; else cp -a "$player/." "$root/"; fi
+if [ "$mcp" != true ]; then rm -rf "${root:?}/$mcp_dir"; fi
 
 # 3. Game.
 rm -rf "${root:?}/$game"
@@ -66,4 +80,7 @@ if [ -f "$icons/icon.png" ]; then
   cp "$icons/icon.png" "$root/$window_icon"
   if [ "$platform" = macos ]; then bash "$here/icns.sh" "$icons/icon.png" "$root/$icns"; fi
 fi
-echo "::notice::CEF $platform package assembled at $root"
+if [ "$mcp" = true ] && [ ! -f "$root/$mcp_dir/enabled" ] || { [ "$mcp" != true ] && [ -e "$root/$mcp_dir" ]; }; then
+  fail "internal error: the MCP state of the assembled package does not match enable-mcp"
+fi
+echo "::notice::CEF $platform package assembled at $root (local MCP bridge $([ "$mcp" = true ] && echo ON || echo OFF))"

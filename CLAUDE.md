@@ -50,8 +50,8 @@ commit bumps the matching pin. If you notice drift, fix it.
 - **One flow for all desktop platforms**: validate -> resolve paths -> download the pinned
   asset -> resolve the project icon -> assemble -> zip. Nothing is compiled and there are no
   build-configuration inputs: each platform has one prebuilt configuration, selected only by
-  `steam` and (Windows) `enable-mcp`. Invalid combinations (`enable-mcp` with `steam` or off
-  Windows, desktop inputs with `android`/`ios`) are hard errors in "Validate inputs", never
+  `steam` and `enable-mcp` (every desktop platform). Invalid combinations (`enable-mcp` with
+  `steam`, desktop inputs with `android`/`ios`) are hard errors in "Validate inputs", never
   silently ignored.
 - **`cef/assemble.ps1`** (Windows) verifies the asset against its own `SHA256SUMS.txt`, checks
   MCP completeness, copies the package without the sample game, its provenance, its
@@ -59,8 +59,10 @@ commit bumps the matching pin. If you notice drift, fix it.
   rewrites `PROVENANCE.txt`/`SHA256SUMS.txt`. Kept in step with Roves Packmaster's
   `src-tauri/src/cef_player.rs`.
 - **`cef/assemble.sh`** (macOS/Linux) checks the documented files (no checksum list is
-  published for those assets), the Steam redistributable exactly when `steam`, copies the
-  player with `ditto`/`cp -a` (symlinks and modes kept), replaces `game/` and applies the
+  published for those assets), the Steam redistributable exactly when `steam`, MCP
+  completeness when `enable-mcp` (`Contents/Resources/mcp` on macOS, `mcp/` next to the Linux
+  executable), copies the player with `ditto`/`cp -a` (symlinks and modes kept), drops that
+  `mcp/` unless `enable-mcp`, replaces `game/` and applies the
   window icon (and on macOS the `.icns` named by `CFBundleIconFile`). It must stay bash
   3.2-compatible (macOS system bash): no `mapfile`, no empty arrays under `set -u`.
 - **Identical copies of engine scripts**: `cef/project_icon.py` =

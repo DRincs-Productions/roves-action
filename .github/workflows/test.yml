@@ -6,8 +6,8 @@ name: 'Test this action against a real game (visual-novel-template)'
 # currently pushed here, not the published @v0 tag. Every run overwrites the same rolling
 # "test" GitHub Release on *this* repo; it is not versioned (see release.yml for releases).
 #
-# `build-and-publish` covers the desktop CEF player path: windows/macos/linux x standard/steam
-# plus the Windows MCP development package. It downloads the pinned engine release (v0.9.0,
+# `build-and-publish` covers the desktop CEF player path: windows/macos/linux x
+# standard/steam/MCP development package. It downloads the pinned engine release (v0.9.0,
 # action.yml's DESKTOP PLAYER PIN): UNTIL ROVES v0.9.0 IS PUBLISHED WITH ITS roves_shell_*
 # CEF ASSETS, EVERY LEG OF THAT JOB FAILS AT "Download the CEF player" -- expected, not a
 # regression. After that it checks input wiring, asset verification, the game replacement
@@ -41,7 +41,7 @@ jobs:
           gh release view "$TEST_RELEASE_TAG" 2>/dev/null || \
           gh release create "$TEST_RELEASE_TAG" \
             --title "roves-action end-to-end test build" \
-            --notes "Rolling test build of $TEMPLATE_REPO through this repo's own action.yml (CEF player on every desktop platform x standard/steam, Windows MCP, Android, iOS). Overwritten on every push to main -- not a real release, see release.yml for that. Latest build: commit ${{ github.sha }}." \
+            --notes "Rolling test build of $TEMPLATE_REPO through this repo's own action.yml (CEF player on every desktop platform x standard/steam/MCP, Android, iOS). Overwritten on every push to main -- not a real release, see release.yml for that. Latest build: commit ${{ github.sha }}." \
             --prerelease \
             2>/dev/null || \
           gh release view "$TEST_RELEASE_TAG" > /dev/null
@@ -61,8 +61,10 @@ jobs:
           - { os: windows-latest, os_name: windows, steam: 'false', mcp: 'true', suffix: '_mcp' }
           - { os: macos-latest, os_name: macos, steam: 'false', mcp: 'false', suffix: '' }
           - { os: macos-latest, os_name: macos, steam: 'true', mcp: 'false', suffix: '_steam' }
+          - { os: macos-latest, os_name: macos, steam: 'false', mcp: 'true', suffix: '_mcp' }
           - { os: ubuntu-latest, os_name: linux, steam: 'false', mcp: 'false', suffix: '' }
           - { os: ubuntu-latest, os_name: linux, steam: 'true', mcp: 'false', suffix: '_steam' }
+          - { os: ubuntu-latest, os_name: linux, steam: 'false', mcp: 'true', suffix: '_mcp' }
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -120,27 +122,31 @@ jobs:
           case "$OS_NAME" in
             windows)
               DEST="$x" pwsh -NoProfile -Command 'Expand-Archive -LiteralPath $env:ARCHIVE -DestinationPath $env:DEST'
-              root="$x/$NAME" game="$x/$NAME/game" steam_lib="$x/$NAME/steam_api64.dll" ;;
+              root="$x/$NAME" game="$x/$NAME/game" steam_lib="$x/$NAME/steam_api64.dll" mcp_dir="$x/$NAME/mcp" ;;
             macos)
               ditto -x -k "$ARCHIVE" "$x"
               root="$(find "$x/$NAME" -maxdepth 1 -name '*.app')"
               game="$root/Contents/Resources/game" steam_lib="$root/Contents/MacOS/libsteam_api.dylib"
+              mcp_dir="$root/Contents/Resources/mcp"
               [ -L "$root/Contents/Frameworks/Chromium Embedded Framework.framework/Versions/Current" ] ||
                 [ ! -e "$root/Contents/Frameworks/Chromium Embedded Framework.framework/Versions" ] ||
                 fail "the framework's Versions/Current symlink was not kept" ;;
             linux)
               unzip -q "$ARCHIVE" -d "$x"
-              root="$x/$NAME" game="$x/$NAME/game" steam_lib="$x/$NAME/libsteam_api.so"
+              root="$x/$NAME" game="$x/$NAME/game" steam_lib="$x/$NAME/libsteam_api.so" mcp_dir="$x/$NAME/mcp"
               [ -x "$root/chrome-sandbox" ] || fail "chrome-sandbox lost its execute bit" ;;
           esac
           diff -r template/dist "$game" || fail "game/ differs from template/dist"
           if [ "$STEAM" = true ]; then [ -f "$steam_lib" ] || fail "Steam package without $steam_lib"
           else [ ! -e "$steam_lib" ] || fail "standard package with $steam_lib"; fi
           [ "$MCP_OUTPUT" = "$MCP" ] || fail "mcp-enabled output is '$MCP_OUTPUT', expected '$MCP'"
+          if [ "$MCP" = true ]; then
+            for f in enabled server.mjs README.md node_modules/@modelcontextprotocol/server/package.json; do
+              [ -f "$mcp_dir/$f" ] || fail "MCP package without $mcp_dir/$f"
+            done
+          else [ ! -e "$mcp_dir" ] || fail "standard package with $mcp_dir"; fi
           if [ "$OS_NAME" = windows ]; then
             [ -f "$root/play.exe" ] && [ -f "$root/SHA256SUMS.txt" ] || fail "play.exe or SHA256SUMS.txt missing"
-            if [ "$MCP" = true ]; then [ -f "$root/mcp/enabled" ] || fail "MCP package without mcp/enabled"
-            else [ ! -e "$root/mcp" ] || fail "standard package with mcp/"; fi
           fi
           echo "::notice::package verified (icons: $ICON_SOURCE)"
 

@@ -49,12 +49,14 @@ inputs:
     default: 'false'
   enable-mcp:
     description: >-
-      Windows only. 'true' packages the MCP-enabled development player
-      (roves_shell_windows_mcp.zip): an AI agent or IDE connected through MCP (Model Context
-      Protocol) can read the running game's state and console, run JavaScript in the page,
-      click, press keys and type. Development and playtests only: never ship that package to
-      players. Cannot be combined with steam. 'false' (default): the output never contains
-      mcp\ (no activation marker, no MCP server).
+      Desktop only (Windows, macOS, Linux). 'true' packages the MCP-enabled development
+      player (roves_shell_<platform>_mcp.zip, with mcp/ next to play.exe, in
+      Contents/Resources of the .app, or next to the Linux executable): an AI agent or IDE
+      connected through MCP (Model Context Protocol) can read the running game's state and
+      console, run JavaScript in the page, click, press keys and type. Development and
+      playtests only: never ship that package to players. Cannot be combined with steam.
+      'false' (default): the output never contains that mcp/ folder (no activation marker,
+      no MCP server).
     required: false
     default: 'false'
 
@@ -191,7 +193,7 @@ outputs:
     description: 'Absolute path to the zipped archive (<artifact-name>.zip).'
     value: ${{ steps.package.outputs.archive-path }}
   mcp-enabled:
-    description: "'true' when the package contains the local MCP bridge (Windows, enable-mcp), otherwise 'false'."
+    description: "'true' when the package contains the local MCP bridge (desktop, enable-mcp), otherwise 'false'."
     value: ${{ steps.validate.outputs.mcp }}
   icon-source:
     description: "Desktop only: where the icons came from, e.g. 'window project (game icon.png 512x512); executable project (ICO generated from game icon.png)'."
@@ -252,7 +254,6 @@ runs:
           suffix=''
           [ "$STEAM" = true ] && suffix=_steam
           if [ "$ENABLE_MCP" = true ]; then
-            if [ "$RUNNER_OS" != Windows ]; then err "enable-mcp: the local MCP bridge exists only in the Windows player (got $RUNNER_OS)"; fi
             if [ "$STEAM" = true ]; then err "enable-mcp and steam can't be combined: no Steam package with the MCP bridge is published"; fi
             suffix=_mcp mcp=true
           fi
@@ -411,7 +412,8 @@ runs:
         OUT: ${{ steps.paths.outputs.output-abs }}
         STEAM: ${{ inputs.steam }}
         ICON_DIR: ${{ steps.icon.outputs.dir }}
-      run: bash "$GITHUB_ACTION_PATH/cef/assemble.sh" "$PLATFORM" "$BASE" "$CONTENT" "$OUT" "$STEAM" "$ICON_DIR"
+        ENABLE_MCP: ${{ inputs.enable-mcp }}
+      run: bash "$GITHUB_ACTION_PATH/cef/assemble.sh" "$PLATFORM" "$BASE" "$CONTENT" "$OUT" "$STEAM" "$ICON_DIR" "$ENABLE_MCP"
 
     # ── Android/iOS: the Servo-era engine's mobile tooling ────────────────────────────────
     # MOBILE ENGINE PIN: v0.7.15. That tag still has `mach bundle --android`/`--ios` and

@@ -9,8 +9,8 @@ branding:
 # this action validates its inputs, installs the toolchains the mobile paths need, runs the CLI
 # and maps its --json result to the outputs. Three pins, all hardcoded literals (see CLAUDE.md,
 # "CRITICAL: keep the pins current"; `grep -n "v0\.\|ROVES_CLI_VERSION" action.yml` finds them):
-#   - ROVES CLI PIN (0.3.0): the exact @drincs/roves-cli version ("Install roves-cli" step).
-#   - DESKTOP PLAYER PIN (v0.9.0): the engine release whose roves_shell_<platform>[_steam|_mcp].zip
+#   - ROVES CLI PIN (0.5.0): the exact @drincs/roves-cli version ("Install roves-cli" step).
+#   - DESKTOP PLAYER PIN (v0.9.1): the engine release whose roves_shell_<platform>[_steam|_mcp].zip
 #     CEF player assets `roves bundle --shell-version` downloads. Nothing is compiled.
 #   - MOBILE ENGINE PIN (v0.7.15): the Servo-era engine source checked out for `mach bundle
 #     --android` and the iOS paths ("Checkout Roves engine source (mobile)" step).
@@ -62,6 +62,28 @@ inputs:
       no MCP server).
     required: false
     default: 'false'
+  content-layout:
+    description: >-
+      Desktop only. How the game is stored in the package's game/ folder: 'archive' (the
+      roves-cli default) writes roves-content.json, code.pack (every JS chunk, CSS, HTML, JSON
+      and WASM file) and data-<folder>.pack archives (assets grouped by top-level folder), which
+      the player memory-maps and serves straight from memory; 'files' copies the build as
+      loose files. Empty (default): the roves-cli default.
+    required: false
+    default: ''
+  compression-level:
+    description: >-
+      Desktop only. Archive compression, '0' (default, no compression: fastest in game) to
+      '9' (smallest download, slower the first time each file is read). Images, audio, video
+      and fonts are always stored. Ignored with content-layout 'files'.
+    required: false
+    default: '0'
+  max-archive-size:
+    description: >-
+      Desktop only. Largest asset archive, e.g. '300MB' (default), '1GiB' or a byte count;
+      bigger folders are split into several archives. Ignored with content-layout 'files'.
+    required: false
+    default: '300MB'
 
   # ── Android (WebView, engine pinned at v0.7.15) ──────────────────────────────────────
   android:
@@ -198,6 +220,9 @@ outputs:
   mcp-enabled:
     description: "'true' when the package contains the local MCP bridge (desktop, enable-mcp), otherwise 'false'."
     value: ${{ steps.package.outputs.mcp-enabled }}
+  content-layout:
+    description: "Desktop only: 'archive' (game/ packed into archives) or 'files' (loose files)."
+    value: ${{ steps.package.outputs.content-layout }}
   icon-source:
     description: "Desktop only: where the icons came from, e.g. 'window project (game icon.png 512x512); executable project (ICO generated from game icon.png)'."
     value: ${{ steps.package.outputs.icon-source }}
@@ -304,7 +329,7 @@ runs:
       id: cli
       shell: bash
       env:
-        ROVES_CLI_VERSION: '0.3.0'
+        ROVES_CLI_VERSION: '0.5.0'
       run: |
         set -euo pipefail
         prefix="$RUNNER_TEMP/roves-cli"
@@ -388,7 +413,7 @@ runs:
       run: brew install xcodegen
 
     # ── Package with roves-cli ───────────────────────────────────────────────────────────
-    # Desktop: `roves bundle` downloads the CEF player of the DESKTOP PLAYER PIN (v0.9.0 in the
+    # Desktop: `roves bundle` downloads the CEF player of the DESKTOP PLAYER PIN (v0.9.1 in the
     # --shell-version argument below), verifies it, adds the game, applies the project icon and
     # zips it. Android: `roves android` runs `rustup show` (when present), `mach bootstrap`
     # (unless bootstrap is 'false'; --skip-platform on Windows) and `mach bundle --android`.
@@ -410,6 +435,9 @@ runs:
         ICON_ICO: ${{ inputs.icon-ico }}
         STEAM: ${{ inputs.steam }}
         ENABLE_MCP: ${{ inputs.enable-mcp }}
+        CONTENT_LAYOUT: ${{ inputs.content-layout }}
+        COMPRESSION_LEVEL: ${{ inputs.compression-level }}
+        MAX_ARCHIVE_SIZE: ${{ inputs.max-archive-size }}
         BOOTSTRAP: ${{ inputs.bootstrap }}
         APP_NAME: ${{ inputs.android-app-name }}
         ORIENTATION: ${{ inputs.android-orientation }}
@@ -432,11 +460,13 @@ runs:
         common=(--content-dir "$CONTENT" --name "$NAME" --out-dir "$OUT_DIR" --json)
         case "$MODE" in
           desktop)
-            args=(bundle --platform "$PLATFORM" --shell-version v0.9.0 "${common[@]}")
+            args=(bundle --platform "$PLATFORM" --shell-version v0.9.1 "${common[@]}")
             [ -n "$ICON_PNG" ] && args+=(--icon-png "$ICON_PNG")
             [ -n "$ICON_ICO" ] && args+=(--icon-ico "$ICON_ICO")
             [ "$STEAM" = true ] && args+=(--steam)
             [ "$ENABLE_MCP" = true ] && args+=(--enable-mcp)
+            [ -n "$CONTENT_LAYOUT" ] && args+=(--content-layout "$CONTENT_LAYOUT")
+            args+=(--compression-level "${COMPRESSION_LEVEL:-0}" --max-archive-size "${MAX_ARCHIVE_SIZE:-300MB}")
             :
             ;;
           android)
@@ -469,6 +499,7 @@ runs:
             `archive-path=${r.archivePath}`,
             `mcp-enabled=${r.mcpEnabled === true}`,
             `icon-source=${r.iconSource ?? ""}`,
+            `content-layout=${r.contentLayout ?? ""}`,
           ];
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `${out.join("\n")}\n`);
           for (const w of r.warnings ?? []) console.log(`::warning::${w}`);

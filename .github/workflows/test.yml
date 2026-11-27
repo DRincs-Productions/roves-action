@@ -8,8 +8,8 @@ name: 'Test this action against a real game (visual-novel-template)'
 #
 # The packaging runs through the pinned @drincs/roves-cli (action.yml, ROVES CLI PIN), which must
 # be published on npm first. `build-and-publish` covers the desktop CEF player path: windows/macos/linux x
-# standard/steam/MCP development package. It downloads the pinned engine release (v0.9.0,
-# action.yml's DESKTOP PLAYER PIN): UNTIL ROVES v0.9.0 IS PUBLISHED WITH ITS roves_shell_*
+# standard/steam/MCP development package. It downloads the pinned engine release (v0.9.1,
+# action.yml's DESKTOP PLAYER PIN): UNTIL ROVES v0.9.1 IS PUBLISHED WITH ITS roves_shell_*
 # CEF ASSETS, EVERY LEG OF THAT JOB FAILS AT "Package with roves-cli" (download) -- expected, not a
 # regression. After that it checks input wiring, asset verification, the game replacement
 # (byte for byte), Steam/MCP selection, icon resolution and the per-platform zip.
@@ -50,9 +50,9 @@ jobs:
             2>/dev/null || \
           gh release view "$TEST_RELEASE_TAG" > /dev/null
 
-  # ── Desktop CEF player: needs Roves v0.9.0 published (see the top comment) ────────────
+  # ── Desktop CEF player: needs Roves v0.9.1 published (see the top comment) ────────────
   build-and-publish:
-    name: desktop ${{ matrix.os_name }}${{ matrix.suffix }} (needs Roves v0.9.0)
+    name: desktop ${{ matrix.os_name }}${{ matrix.suffix }} (needs Roves v0.9.1)
     needs: ensure-test-release
     permissions:
       contents: write
@@ -104,9 +104,10 @@ jobs:
           enable-mcp: ${{ matrix.mcp }}
           artifact-name: visual-novel-template_${{ matrix.os_name }}${{ matrix.suffix }}
 
-      # Checks the extracted archive, not just bundle-dir: the game is the template build byte
-      # for byte, Steam/MCP files exist exactly when asked, and the zip kept the Linux execute
-      # bits and the macOS framework symlinks.
+      # Checks the extracted archive, not just bundle-dir: the game (default settings: packed
+      # into archives) unpacks to the template build byte for byte, Steam/MCP files exist
+      # exactly when asked, and the zip kept the Linux execute bits and the macOS framework
+      # symlinks.
       - name: verify the package
         shell: bash
         env:
@@ -116,6 +117,7 @@ jobs:
           STEAM: ${{ matrix.steam }}
           MCP: ${{ matrix.mcp }}
           MCP_OUTPUT: ${{ steps.roves.outputs.mcp-enabled }}
+          LAYOUT: ${{ steps.roves.outputs.content-layout }}
           ICON_SOURCE: ${{ steps.roves.outputs.icon-source }}
         run: |
           set -euo pipefail
@@ -139,7 +141,23 @@ jobs:
               root="$x/$NAME" game="$x/$NAME/game" steam_lib="$x/$NAME/libsteam_api.so" mcp_dir="$x/$NAME/mcp"
               [ -x "$root/chrome-sandbox" ] || fail "chrome-sandbox lost its execute bit" ;;
           esac
-          diff -r template/dist "$game" || fail "game/ differs from template/dist"
+          [ "$LAYOUT" = archive ] || fail "content-layout output is '$LAYOUT', expected the default 'archive'"
+          [ -f "$game/roves-content.json" ] && [ -f "$game/code.pack" ] || fail "game/ is not packed (no roves-content.json or code.pack)"
+          [ ! -e "$game/index.html" ] || fail "packed game/ also has a loose index.html"
+          py="$(command -v python3 || command -v python)"
+          "$py" - "$game" "$x/unpacked" <<'PY'
+          import json, os, sys, zipfile
+          game, out = sys.argv[1], sys.argv[2]
+          manifest = json.load(open(os.path.join(game, "roves-content.json")))
+          assert manifest["format"] == 1 and manifest["code"] == "code.pack", manifest
+          for name in [manifest["code"], *manifest["assets"]]:
+              with zipfile.ZipFile(os.path.join(game, name)) as z:
+                  for info in z.infolist():
+                      assert info.compress_type == zipfile.ZIP_STORED, f"{name}: {info.filename} is compressed (default must be stored)"
+                  z.extractall(out)
+          print(f"unpacked {len(manifest['assets']) + 1} archives")
+          PY
+          diff -r template/dist "$x/unpacked" || fail "the unpacked archives differ from template/dist"
           if [ "$STEAM" = true ]; then [ -f "$steam_lib" ] || fail "Steam package without $steam_lib"
           else [ ! -e "$steam_lib" ] || fail "standard package with $steam_lib"; fi
           [ "$MCP_OUTPUT" = "$MCP" ] || fail "mcp-enabled output is '$MCP_OUTPUT', expected '$MCP'"
@@ -170,7 +188,7 @@ jobs:
           done
           exit 1
 
-  # ── Android (mobile engine pin v0.7.15, independent of v0.9.0) ──────────────────────
+  # ── Android (mobile engine pin v0.7.15, independent of v0.9.1) ──────────────────────
   build-android:
     needs: ensure-test-release
     if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/v')
@@ -293,7 +311,7 @@ jobs:
           done
           exit 1
 
-  # ── iOS (mobile engine pin v0.7.15, independent of v0.9.0) ──────────────────────────
+  # ── iOS (mobile engine pin v0.7.15, independent of v0.9.1) ──────────────────────────
   build-ios:
     needs: ensure-test-release
     if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/v')

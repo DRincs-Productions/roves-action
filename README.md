@@ -3,7 +3,7 @@
 Packages your already-built web game as a native app with
 [Roves](https://github.com/DRincs-Productions/roves), for any game's own CI:
 
-- **Desktop (Windows, macOS, Linux): the Roves CEF player, release v0.9.0.** The action
+- **Desktop (Windows, macOS, Linux): the Roves CEF player, release v0.9.1.** The action
   downloads the prebuilt player for the runner's platform, verifies it, puts your game in its
   `game/` folder, applies your game's icon and zips the result. Nothing is compiled. The
   standard and Steam variants exist for every platform, plus an opt-in MCP-enabled
@@ -12,16 +12,15 @@ Packages your already-built web game as a native app with
   v0.7.15 (`mach bundle --android`, `support/ios/bundle.py`/`mach bundle --ios`), unchanged.
 
 The packaging is done by [`@drincs/roves-cli`](https://github.com/DRincs-Productions/roves-cli)
-(the `roves` command, pinned to **0.3.0**), which you can also run yourself outside GitHub
+(the `roves` command, pinned to **0.5.0**), which you can also run yourself outside GitHub
 Actions. The action validates its inputs, installs the toolchains the mobile paths need
 (JDK, Android SDK, uv, Python, XcodeGen), runs the CLI and maps its result to the outputs.
 
 Upgrading from the Servo desktop shell (`advanced-mode`, `features`, `deb`/`msi`/`dmg`,
 content packing, ...)? See [Migrating to the CEF player](#migrating-to-the-cef-player).
 
-> **Pin status:** the desktop path downloads assets of the Roves **v0.9.0** release through
-> `@drincs/roves-cli` **0.3.0**. Until that release is published, the desktop download fails
-> with a clear error.
+> **Pin status:** the desktop path downloads assets of the Roves **v0.9.1** release through
+> `@drincs/roves-cli` **0.5.0**.
 
 ## What this action does *not* do
 
@@ -193,6 +192,22 @@ jobs:
     # default: false
     enable-mcp: false
 
+    # Desktop only: 'archive' packs the game into a few archives the player memory-maps
+    # (code in one archive, assets grouped by top-level folder); 'files' copies loose files.
+    #
+    # default: '' (the roves-cli default, archive)
+    content-layout: ''
+
+    # Desktop only: archive compression, 0 (none, fastest in game) to 9 (smallest download).
+    #
+    # default: '0'
+    compression-level: '0'
+
+    # Desktop only: largest asset archive (bigger folders are split), e.g. 300MB or 1GiB.
+    #
+    # default: '300MB'
+    max-archive-size: '300MB'
+
     # ── Android (engine v0.7.15) ─────────────────────────────────────────────────
     # Package a native Android WebView APK instead of a desktop package.
     #
@@ -291,14 +306,15 @@ jobs:
 | `bundle-dir` | Absolute path to the unzipped package folder (named `artifact-name`; on macOS the app bundle `artifact-name.app`) |
 | `archive-path` | Absolute path to `<artifact-name>.zip` |
 | `mcp-enabled` | `'true'` when the package contains the local MCP bridge, else `'false'` |
+| `content-layout` | Desktop: `archive` (game packed into archives) or `files` (loose files) |
 | `icon-source` | Desktop: where the icons came from, e.g. `window project (game icon.png 512x512); executable project (ICO generated from game icon.png)` |
 
 ## Desktop: the CEF player
 
 The desktop package is the Roves CEF player (Chromium Embedded Framework, SDL3, wgpu) built
-and published by the engine's v0.9.0 release. The action picks the asset from the runner and
+and published by the engine's v0.9.1 release. The action picks the asset from the runner and
 the inputs, downloads it from
-`https://github.com/DRincs-Productions/roves/releases/download/v0.9.0/<asset>` and builds
+`https://github.com/DRincs-Productions/roves/releases/download/v0.9.1/<asset>` and builds
 your package from it:
 
 | Runner | `steam` | `enable-mcp` | Release asset | Your zip contains |
@@ -340,6 +356,16 @@ root.
 **macOS.** The `.app` is not notarized: Gatekeeper blocks a downloaded copy until the player
 allows it, and an app launched from a quarantined location runs translocated. Signing and
 notarizing before distribution is your release step.
+
+### Packed game content
+
+By default the game is not copied as loose files: `game/` holds `roves-content.json`,
+`code.pack` (every JS chunk, CSS, HTML, JSON and WASM file) and `data-<folder>.pack` archives
+(the other files, grouped by top-level folder, at most `max-archive-size` each). The player
+memory-maps them and serves files straight from memory, reading ahead the next files of the
+same folder, which is faster than loose files. `compression-level` 1-9 makes the download
+smaller at some in-game cost the first time each file is read (images, audio, video and fonts
+are always stored); `content-layout: files` keeps the loose copy.
 
 ### Project icon
 
